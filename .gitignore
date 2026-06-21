@@ -1,0 +1,25 @@
+# Backend ignores
+estudiez-backend/.gradle/
+estudiez-backend/build/
+estudiez-backend/out/
+estudiez-backend/.idea/
+estudiez-backend/*.iml
+estudiez-backend/.settings/
+estudiez-backend/.project
+estudiez-backend/.classpath
+estudiez-backend/bin/
+
+# Frontend ignores
+estudiez-website/node_modules/
+estudiez-website/dist/
+estudiez-website/dist-ssr/
+estudiez-website/*.log
+estudiez-website/.idea/
+estudiez-website/.vscode/*
+!estudiez-website/.vscode/extensions.json
+
+# General ignores
+.DS_Store
+.idea/
+.vscode/
+*.log
