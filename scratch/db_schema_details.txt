@@ -1,0 +1,141 @@
+=== TABLE: Users ===
+UserId uniqueidentifier NULL NO (newid())
+RoleId int NULL NO NULL
+Username nvarchar 80 NO NULL
+PasswordHash nvarchar 255 NO NULL
+FullName nvarchar 150 NO NULL
+Email nvarchar 150 YES NULL
+Phone nvarchar 30 YES NULL
+AvatarUrl nvarchar 500 YES NULL
+IsActive bit NULL NO ((1))
+LastLoginAt datetime2 NULL YES NULL
+CreatedAt datetime2 NULL NO (sysdatetime())
+UpdatedAt datetime2 NULL NO (sysdatetime())
+
+(12 rows affected)
+
+
+=== TABLE: Students ===
+StudentId uniqueidentifier NULL NO (newid())
+UserId uniqueidentifier NULL NO NULL
+StudentCode nvarchar 50 NO NULL
+DateOfBirth date NULL YES NULL
+Gender nvarchar 20 YES NULL
+Address nvarchar -1 YES NULL
+AdmissionDate date NULL NO (CONVERT([date],getdate()))
+Status nvarchar 30 NO ('ACTIVE')
+CreatedAt datetime2 NULL NO (sysdatetime())
+
+(9 rows affected)
+
+
+=== TABLE: Teachers ===
+TeacherId uniqueidentifier NULL NO (newid())
+UserId uniqueidentifier NULL NO NULL
+EmployeeCode nvarchar 50 NO NULL
+SubjectId int NULL NO NULL
+Qualification nvarchar 150 YES NULL
+CreatedAt datetime2 NULL NO (sysdatetime())
+
+(6 rows affected)
+
+
+=== TABLE: Parents ===
+ParentId uniqueidentifier NULL NO (newid())
+UserId uniqueidentifier NULL NO NULL
+Occupation nvarchar 120 YES NULL
+Address nvarchar -1 YES NULL
+CreatedAt datetime2 NULL NO (sysdatetime())
+
+(5 rows affected)
+
+
+=== TABLE: Classes ===
+ClassId int NULL NO NULL
+SchoolYearId int NULL NO NULL
+GradeId int NULL NO NULL
+Name nvarchar 50 NO NULL
+HomeroomTeacherId uniqueidentifier NULL YES NULL
+TrainingProgram nvarchar 30 NO ('REGULAR')
+Room nvarchar 50 YES NULL
+IsActive bit NULL NO ((1))
+
+(8 rows affected)
+
+
+=== TABLE: TimetableSlots ===
+TimetableSlotId int NULL NO NULL
+ClassId int NULL NO NULL
+SubjectId int NULL NO NULL
+TeacherId uniqueidentifier NULL NO NULL
+SemesterId int NULL NO NULL
+DayOfWeek tinyint NULL NO NULL
+PeriodNo tinyint NULL NO NULL
+StartTime time NULL NO NULL
+EndTime time NULL NO NULL
+Room nvarchar 50 YES NULL
+EffectiveFrom date NULL NO NULL
+EffectiveTo date NULL YES NULL
+
+(12 rows affected)
+
+
+=== TABLE: LessonSessions ===
+LessonSessionId int NULL NO NULL
+TimetableSlotId int NULL YES NULL
+ClassId int NULL NO NULL
+SubjectId int NULL NO NULL
+TeacherId uniqueidentifier NULL NO NULL
+SessionDate date NULL NO NULL
+PeriodNo tinyint NULL NO NULL
+Room nvarchar 50 YES NULL
+Topic nvarchar 255 YES NULL
+Status nvarchar 30 NO ('SCHEDULED')
+CreatedAt datetime2 NULL NO (sysdatetime())
+
+(11 rows affected)
+
+
+=== TABLE: AttendanceRecords ===
+AttendanceId int NULL NO NULL
+LessonSessionId int NULL NO NULL
+StudentId uniqueidentifier NULL NO NULL
+Status nvarchar 30 NO NULL
+Note nvarchar -1 YES NULL
+RecordedBy uniqueidentifier NULL NO NULL
+RecordedAt datetime2 NULL NO (sysdatetime())
+
+(7 rows affected)
+
+
+=== TABLE: Assessments ===
+AssessmentId int NULL NO NULL
+ClassId int NULL NO NULL
+SubjectId int NULL NO NULL
+TeacherId uniqueidentifier NULL NO NULL
+SemesterId int NULL NO NULL
+AssessmentTypeId int NULL NO NULL
+Title nvarchar 255 NO NULL
+AssessmentDate date NULL NO NULL
+MaxScore decimal NULL NO ((10))
+Weight decimal NULL NO ((1))
+Description nvarchar -1 YES NULL
+Status nvarchar 30 NO ('SCHEDULED')
+CreatedAt datetime2 NULL NO (sysdatetime())
+
+(13 rows affected)
+
+
+=== TABLE: StudentMarks ===
+StudentMarkId int NULL NO NULL
+AssessmentId int NULL NO NULL
+StudentId uniqueidentifier NULL NO NULL
+Score decimal NULL NO NULL
+TeacherComment nvarchar -1 YES NULL
+Remark nvarchar -1 YES NULL
+GradedBy uniqueidentifier NULL NO NULL
+GradedAt datetime2 NULL NO (sysdatetime())
+
+(8 rows affected)
+
+

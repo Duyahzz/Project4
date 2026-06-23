@@ -23,3 +23,7 @@ estudiez-website/.vscode/*
 .idea/
 .vscode/
 *.log
+
+# Python cache ignores
+**/__pycache__/
+*.pyc
