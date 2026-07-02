@@ -110,12 +110,7 @@ export function LoginPage() {
         </button>
       </form>
 
-      <p className="mt-4 text-sm text-slate-600">
-        New here?{' '}
-        <Link to="/register" className="text-indigo-600 font-semibold hover:underline">
-          Create an account
-        </Link>
-      </p>
+
     </div>
   )
 }

@@ -9,7 +9,7 @@ import subprocess
 import json
 import os
 
-art_dir = "C:/Users/ACER/.gemini/antigravity/brain/22fcb295-5af0-468a-9363-71ad5af1f843"
+art_dir = "C:/Users/ACER/.gemini/antigravity/brain/dea5ba61-4960-4852-a9d6-f0399d4e1e13"
 
 def set_cell_background(cell, fill_hex):
     tcPr = cell._tc.get_or_add_tcPr()
@@ -35,6 +35,34 @@ def set_table_borders(table):
         f'<w:left w:val="none"/>'
         f'<w:right w:val="none"/>'
         f'<w:insideH w:val="single" w:sz="4" w:space="0" w:color="EAEAEA"/>'
+        f'<w:insideV w:val="none"/>'
+        f'</w:tblBorders>'
+    )
+    tblPr.append(borders)
+
+def set_cover_table_borders(table):
+    tblPr = table._tbl.tblPr
+    borders = parse_xml(
+        f'<w:tblBorders {nsdecls("w")}>'
+        f'<w:top w:val="single" w:sz="6" w:space="0" w:color="000000"/>'
+        f'<w:bottom w:val="single" w:sz="6" w:space="0" w:color="000000"/>'
+        f'<w:left w:val="single" w:sz="6" w:space="0" w:color="000000"/>'
+        f'<w:right w:val="single" w:sz="6" w:space="0" w:color="000000"/>'
+        f'<w:insideH w:val="single" w:sz="6" w:space="0" w:color="000000"/>'
+        f'<w:insideV w:val="single" w:sz="6" w:space="0" w:color="000000"/>'
+        f'</w:tblBorders>'
+    )
+    tblPr.append(borders)
+
+def clear_table_borders(table):
+    tblPr = table._tbl.tblPr
+    borders = parse_xml(
+        f'<w:tblBorders {nsdecls("w")}>'
+        f'<w:top w:val="none"/>'
+        f'<w:bottom w:val="none"/>'
+        f'<w:left w:val="none"/>'
+        f'<w:right w:val="none"/>'
+        f'<w:insideH w:val="none"/>'
         f'<w:insideV w:val="none"/>'
         f'</w:tblBorders>'
     )
@@ -84,18 +112,135 @@ def draw_dfd():
     img.save("scratch/dfd_level0.png")
 
 def draw_architecture():
-    img = Image.new('RGB', (700, 300), color=(255, 255, 255))
+    # Canvas Size
+    width = 800
+    height = 600
+    img = Image.new('RGB', (width, height), color=(255, 255, 255))
     draw = ImageDraw.Draw(img)
-    boxes = [
-        ("Presentation: React Web", (50, 100, 220, 200), (230, 242, 255)),
-        ("Logic: Spring Boot API", (280, 100, 450, 200), (245, 247, 250)),
-        ("Data: SQL Server DB", (500, 100, 670, 200), (255, 235, 235))
+    
+    # Draw light grey grid background
+    grid_spacing = 20
+    for x in range(0, width, grid_spacing):
+        draw.line([x, 0, x, height], fill=(240, 240, 240), width=1)
+    for y in range(0, height, grid_spacing):
+        draw.line([0, y, width, y], fill=(240, 240, 240), width=1)
+        
+    # Helpers for rounded boxes
+    def draw_rounded_box(draw, box, radius, fill_color, outline_color, width=1):
+        x0, y0, x1, y1 = box
+        draw.rounded_rectangle([x0, y0, x1, y1], radius=radius, fill=fill_color, outline=outline_color, width=width)
+
+    # ─── ROW 1: PRESENTATION (Thymeleaf & Flutter) ───
+    # Icon: Client device (Monitor & Phone)
+    draw.polygon([(60, 110), (100, 110), (90, 95), (70, 95)], fill=(120, 144, 156))
+    draw.rectangle([75, 95, 85, 105], fill=(144, 164, 174))
+    draw_rounded_box(draw, [40, 50, 120, 95], 5, (224, 242, 241), (55, 71, 79), 2)
+    draw.text((68, 65), "</>", fill=(38, 50, 56), font=get_font(12, True))
+    draw_rounded_box(draw, [110, 40, 140, 95], 4, (230, 242, 255), (0, 112, 192), 2)
+    draw.rectangle([112, 45, 138, 85], fill=(255, 255, 255))
+    draw.ellipse([123, 88, 127, 92], fill=(0, 112, 192))
+    
+    # Right box
+    draw_rounded_box(draw, [180, 20, 780, 140], 12, (255, 255, 255), (180, 180, 180), 2)
+    
+    # Thymeleaf Logo & Text
+    draw.polygon([(220, 80), (250, 45), (270, 60), (265, 85), (245, 105), (225, 105)], fill=(0, 95, 47))
+    draw.polygon([(225, 75), (250, 45), (258, 60), (252, 85), (240, 98)], fill=(0, 120, 60))
+    draw.text((280, 50), "Thymeleaf", fill=(50, 50, 50), font=get_font(28, False))
+    
+    # Flutter Logo & Text
+    draw.polygon([(620, 45), (650, 45), (630, 65), (600, 65)], fill=(0, 180, 255))
+    draw.polygon([(630, 65), (660, 65), (620, 105), (590, 105)], fill=(0, 112, 192))
+    draw.polygon([(620, 105), (660, 65), (645, 65), (605, 105)], fill=(0, 80, 180))
+    draw.text((670, 52), "Flutter", fill=(50, 50, 50), font=get_font(28, False))
+    
+    # ─── ROW 2: SECURITY (JWT) ───
+    # Icon: Shield with lock
+    draw.polygon([(50, 190), (110, 190), (110, 230), (80, 260), (50, 230)], fill=(245, 247, 250))
+    draw.line([(50, 190), (110, 190), (110, 230), (80, 260), (50, 230), (50, 190)], fill=(0, 0, 0), width=3)
+    draw_rounded_box(draw, [70, 215, 90, 240], 2, (0, 0, 0), (0, 0, 0), 1)
+    draw.arc([73, 205, 87, 220], 180, 360, fill=(0, 0, 0), width=2)
+    
+    # Right box
+    draw_rounded_box(draw, [180, 160, 780, 280], 12, (255, 255, 255), (180, 180, 180), 2)
+    
+    # JWT Logo & Text
+    star_x, star_y = 360, 220
+    colors = [
+        (251, 0, 137), (218, 0, 137), (137, 0, 218), (0, 180, 255),
+        (0, 210, 180), (0, 210, 80), (180, 210, 0), (251, 140, 0)
     ]
-    for label, box, col in boxes:
-        draw.rectangle(box, fill=col, outline=(10, 37, 64), width=2)
-        draw.text((box[0]+15, box[1]+40), label, fill=(10, 37, 64), font=get_font(12, True))
-    draw.line([220, 150, 280, 150], fill=(10, 37, 64), width=2)
-    draw.line([450, 150, 500, 150], fill=(10, 37, 64), width=2)
+    import math
+    for i in range(12):
+        angle = i * (360 / 12)
+        rad = math.radians(angle)
+        x_start = star_x + int(10 * math.cos(rad))
+        y_start = star_y + int(10 * math.sin(rad))
+        x_end = star_x + int(32 * math.cos(rad))
+        y_end = star_y + int(32 * math.sin(rad))
+        draw.line([x_start, y_start, x_end, y_end], fill=colors[i % len(colors)], width=6)
+    draw.line([star_x, star_y - 35, star_x, star_y + 35], fill=(255, 255, 255), width=6)
+    draw.text((430, 190), "JWT", fill=(0, 0, 0), font=get_font(42, True))
+    
+    # ─── ROW 3: BACKEND (Spring Boot) ───
+    # Icon: Browser with gear
+    draw.rectangle([45, 340, 115, 395], outline=(0, 112, 192), width=2)
+    draw.line([45, 350, 115, 350], fill=(0, 112, 192), width=2)
+    draw.ellipse([85, 375, 110, 400], outline=(55, 71, 79), width=2)
+    for i in range(8):
+        angle = i * (360 / 8)
+        rad = math.radians(angle)
+        gx = 97 + int(15 * math.cos(rad))
+        gy = 387 + int(15 * math.sin(rad))
+        draw.line([97, 387, gx, gy], fill=(55, 71, 79), width=3)
+    draw.ellipse([92, 382, 102, 392], fill=(255, 255, 255), outline=(55, 71, 79), width=2)
+    draw.text((55, 402), "BACKEND", fill=(0, 112, 192), font=get_font(8, True))
+    
+    # Right box
+    draw_rounded_box(draw, [180, 300, 780, 420], 12, (255, 255, 255), (180, 180, 180), 2)
+    
+    # Green Spring Boot Block
+    draw.rectangle([400, 301, 620, 419], fill=(109, 179, 63))
+    draw.ellipse([420, 335, 470, 385], fill=(255, 255, 255))
+    draw.polygon([(435, 368), (455, 342), (460, 355), (452, 373)], fill=(109, 179, 63))
+    draw.polygon([(435, 368), (446, 355), (452, 358), (442, 372)], fill=(80, 140, 40))
+    draw.text((485, 330), "spring", fill=(255, 255, 255), font=get_font(22, False))
+    draw.text((485, 358), "Boot", fill=(255, 255, 255), font=get_font(24, True))
+    
+    # ─── ROW 4: DATABASE (SQL Server & Firebase) ───
+    # Icon: Database Cylinder
+    db_x = 80
+    draw.ellipse([db_x - 35, 470, db_x + 35, 490], fill=(245, 247, 250), outline=(0, 0, 0), width=3)
+    draw.rectangle([db_x - 35, 480, db_x + 35, 510], fill=(245, 247, 250))
+    draw.line([db_x - 35, 480, db_x - 35, 510], fill=(0, 0, 0), width=3)
+    draw.line([db_x + 35, 480, db_x + 35, 510], fill=(0, 0, 0), width=3)
+    draw.ellipse([db_x - 35, 500, db_x + 35, 520], fill=(245, 247, 250), outline=(0, 0, 0), width=3)
+    draw.rectangle([db_x - 35, 510, db_x + 35, 540], fill=(245, 247, 250))
+    draw.line([db_x - 35, 510, db_x - 35, 540], fill=(0, 0, 0), width=3)
+    draw.line([db_x + 35, 510, db_x + 35, 540], fill=(0, 0, 0), width=3)
+    draw.ellipse([db_x - 35, 530, db_x + 35, 550], fill=(245, 247, 250), outline=(0, 0, 0), width=3)
+    
+    # Right box
+    draw_rounded_box(draw, [180, 440, 780, 560], 12, (255, 255, 255), (180, 180, 180), 2)
+    
+    # SQL Server Logo & Text
+    px, py = 320, 485
+    draw.polygon([(px, py), (px - 25, py + 35), (px + 25, py + 35)], outline=(218, 37, 29), width=2)
+    draw.line([px, py, px, py + 35], fill=(218, 37, 29), width=2)
+    draw.line([px - 25, py + 35, px + 25, py + 35], fill=(218, 37, 29), width=2)
+    draw.line([px, py, px - 12, py + 35], fill=(218, 37, 29), width=1)
+    draw.line([px, py, px + 12, py + 35], fill=(218, 37, 29), width=1)
+    draw.line([px - 12, py + 18, px + 12, py + 18], fill=(218, 37, 29), width=1)
+    draw.text((270, 522), "Microsoft", fill=(80, 80, 80), font=get_font(10, False))
+    draw.text((270, 532), "SQL Server", fill=(0, 0, 0), font=get_font(18, True))
+    
+    # Firebase Blue Block
+    draw.rectangle([570, 441, 690, 559], fill=(2, 136, 209))
+    fx, fy = 630, 490
+    draw.polygon([(fx, fy - 25), (fx - 15, fy + 15), (fx + 15, fy + 15)], fill=(255, 179, 0))
+    draw.polygon([(fx, fy - 25), (fx - 5, fy + 15), (fx + 15, fy + 15)], fill=(255, 202, 40))
+    draw.text((605, 515), "Firebase", fill=(255, 255, 255), font=get_font(12, True))
+    
     img.save("scratch/architecture.png")
 
 def draw_usecase():
@@ -468,74 +613,219 @@ def main():
         doc.add_page_break()
 
     # ─── COVER PAGE ───
-    p_hdr = doc.add_paragraph()
-    p_hdr.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r_hdr = p_hdr.add_run("FPT ACADEMY INTERNATIONAL\nFPT – APTECH COMPUTER EDUCATION\n")
-    r_hdr.bold = True
-    r_hdr.font.size = Pt(13)
-    r_hdr.font.color.rgb = PRIMARY_COLOR
-    r_addr = p_hdr.add_run("Centre Name: ACE-HCMC-2-FPT\nAddress: 391A Nam Ky Khoi Nghia, District 3, Ho Chi Minh City, Viet Nam\n\n\n\n")
-    r_addr.font.size = Pt(10)
-    r_addr.italic = True
-    r_addr.font.color.rgb = DARK_TEXT
+    # ─── GENERATE APTECH LOGO IMAGE ───
+    logo_path = "scratch/aptech_logo.png"
+    logo_img = Image.new('RGB', (350, 150), 'white')
+    logo_draw = ImageDraw.Draw(logo_img)
+    
+    # Draw black block
+    logo_draw.rectangle([10, 10, 240, 75], fill=(26, 26, 26))
+    
+    # Draw red sloped polygon
+    logo_draw.polygon([(10, 10), (65, 10), (45, 75), (10, 75)], fill=(218, 37, 29))
+    
+    try:
+        font_aptech = ImageFont.truetype("arialbd.ttf", 26)
+        font_sub = ImageFont.truetype("arial.ttf", 9)
+        font_alliance = ImageFont.truetype("arialbd.ttf", 9)
+        font_fpt = ImageFont.truetype("arialbd.ttf", 10)
+    except Exception:
+        font_aptech = ImageFont.load_default()
+        font_sub = ImageFont.load_default()
+        font_alliance = ImageFont.load_default()
+        font_fpt = ImageFont.load_default()
+        
+    logo_draw.text((70, 20), "Aptech", fill=(255, 255, 255), font=font_aptech)
+    
+    # Paw mark
+    logo_draw.ellipse([185, 20, 192, 27], fill=(247, 148, 29))
+    logo_draw.ellipse([194, 17, 202, 25], fill=(247, 148, 29))
+    logo_draw.ellipse([204, 20, 211, 27], fill=(247, 148, 29))
+    logo_draw.ellipse([188, 30, 208, 44], fill=(247, 148, 29))
+    
+    # "COMPUTER EDUCATION"
+    logo_draw.text((70, 52), "COMPUTER EDUCATION", fill=(247, 148, 29), font=font_sub)
+    
+    # "Alliance with"
+    logo_draw.text((10, 85), "Alliance with", fill=(10, 37, 64), font=font_alliance)
+    
+    # FPT colored logo
+    logo_draw.text((80, 85), "F", fill=(247, 148, 29), font=font_fpt)
+    logo_draw.text((90, 85), "P", fill=(0, 176, 80), font=font_fpt)
+    logo_draw.text((100, 85), "T", fill=(0, 112, 192), font=font_fpt)
+    
+    # "Education"
+    logo_draw.text((115, 85), "Education", fill=(46, 117, 182), font=font_alliance)
+    
+    logo_img.save(logo_path)
 
+    # ─── HEADER TABLE ───
+    header_table = doc.add_table(rows=1, cols=2)
+    header_table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    clear_table_borders(header_table)
+    
+    # Set widths for header table columns
+    cell_hdr_0 = header_table.cell(0, 0)
+    cell_hdr_1 = header_table.cell(0, 1)
+    cell_hdr_0.width = Inches(2.2)
+    cell_hdr_1.width = Inches(4.3)
+    set_cell_margins(cell_hdr_0, top=0, bottom=0, left=0, right=0)
+    set_cell_margins(cell_hdr_1, top=0, bottom=0, left=0, right=0)
+    
+    p_hdr_left = cell_hdr_0.paragraphs[0]
+    p_hdr_left.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    r_logo = p_hdr_left.add_run()
+    r_logo.add_picture(logo_path, width=Inches(1.8))
+    
+    p_hdr_right = cell_hdr_1.paragraphs[0]
+    p_hdr_right.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    r_hdr_1 = p_hdr_right.add_run("FPT ACADEMY INTERNATIONAL\n")
+    r_hdr_1.bold = True
+    r_hdr_1.font.name = "Arial"
+    r_hdr_1.font.size = Pt(11)
+    r_hdr_1.font.color.rgb = RGBColor(0, 0, 0)
+    r_hdr_2 = p_hdr_right.add_run("FPT – APTECH COMPUTER EDUCATION")
+    r_hdr_2.bold = True
+    r_hdr_2.font.name = "Arial"
+    r_hdr_2.font.size = Pt(11)
+    r_hdr_2.font.color.rgb = RGBColor(0, 0, 0)
+    
+    # ─── CENTER DETAILS ───
+    p_center = doc.add_paragraph()
+    p_center.paragraph_format.space_before = Pt(30)
+    p_center.paragraph_format.space_after = Pt(2)
+    r_name = p_center.add_run("Center Name: ACE-HCMC-2-FPT.")
+    r_name.bold = True
+    r_name.font.name = "Arial"
+    r_name.font.size = Pt(11.5)
+    r_name.font.color.rgb = RGBColor(0, 0, 0)
+
+    p_addr = doc.add_paragraph()
+    p_addr.paragraph_format.space_after = Pt(70) # large space before title
+    r_addr = p_addr.add_run("Address: 21 Bis Hậu Giang Street, Tân Sơn Nhất Ward, Ho Chi Minh City, Viet Nam.")
+    r_addr.bold = True
+    r_addr.font.name = "Arial"
+    r_addr.font.size = Pt(11.5)
+    r_addr.font.color.rgb = RGBColor(0, 0, 0)
+    
+    # ─── MAIN TITLE ───
     p_title = doc.add_paragraph()
     p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    r_title = p_title.add_run("eStudiez (eStudent)\n")
+    p_title.paragraph_format.space_after = Pt(4)
+    r_title = p_title.add_run("eStudiez")
     r_title.bold = True
-    r_title.font.size = Pt(32)
-    r_title.font.color.rgb = PRIMARY_COLOR
-    r_sub = p_title.add_run("(Next-Gen High School Student & Portal Management System)\n\n")
-    r_sub.bold = True
-    r_sub.font.size = Pt(18)
-    r_sub.font.color.rgb = SECONDARY_COLOR
-    r_doc = p_title.add_run("Design Document\n\n\n\n")
-    r_doc.italic = True
-    r_doc.font.size = Pt(14)
-    r_doc.font.color.rgb = DARK_TEXT
+    r_title.font.name = "Georgia"
+    r_title.font.size = Pt(52)
+    r_title.font.color.rgb = RGBColor(237, 125, 49) # Orange color
 
-    p_info = doc.add_paragraph()
-    p_info.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    info_items = [
-        ("Supervisor:", "TRẦN PHƯỚC SINH"),
-        ("Semester:", "IV"),
-        ("Batch No:", "T1.2208,M2"),
-        ("Group No:", "01"),
-        ("Month:", "06 Year: 2026")
+    p_sub = doc.add_paragraph()
+    p_sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p_sub.paragraph_format.space_after = Pt(60) # space before table
+    r_sub = p_sub.add_run("Design Document")
+    r_sub.font.name = "Arial"
+    r_sub.font.size = Pt(24)
+    r_sub.font.color.rgb = RGBColor(0, 0, 0)
+    
+    # ─── INFO & MEMBERS TABLE ───
+    table_info = doc.add_table(rows=8, cols=3)
+    table_info.alignment = WD_TABLE_ALIGNMENT.CENTER
+    set_cover_table_borders(table_info)
+
+    col_widths = [Inches(1.5), Inches(3.2), Inches(1.8)]
+
+    # Merge Col 1 & Col 2 for the first 4 rows
+    for r_idx in range(4):
+        c1 = table_info.cell(r_idx, 1)
+        c2 = table_info.cell(r_idx, 2)
+        c1.merge(c2)
+
+    row_data_merged = [
+        ("Supervisor:", "Mr. Trần Phước Sinh"),
+        ("Semester:", "4"),
+        ("Batch No:", "T1.2406.E1"),
+        ("Group No:", "5")
     ]
-    for lbl, val in info_items:
-        r_lbl = p_info.add_run(f"{lbl} ")
-        r_lbl.bold = True
-        r_lbl.font.color.rgb = PRIMARY_COLOR
-        p_info.add_run(f"{val}\n")
-    p_info.add_run("\n")
 
-    table_members = doc.add_table(rows=5, cols=3)
-    table_members.alignment = WD_TABLE_ALIGNMENT.CENTER
-    set_table_borders(table_members)
-    member_headers = ["Order", "Full Name", "Roll No."]
-    for idx, text in enumerate(member_headers):
-        cell = table_members.cell(0, idx)
-        set_cell_background(cell, "0B2548")
+    for r_idx, (lbl, val) in enumerate(row_data_merged):
+        cell_lbl = table_info.cell(r_idx, 0)
+        set_cell_margins(cell_lbl, top=120, bottom=120, left=150, right=150)
+        p_lbl = cell_lbl.paragraphs[0]
+        p_lbl.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        r_lbl = p_lbl.add_run(lbl)
+        r_lbl.bold = True
+        r_lbl.font.name = "Arial"
+        r_lbl.font.size = Pt(10.5)
+        r_lbl.font.color.rgb = RGBColor(0, 0, 0)
+
+        cell_val = table_info.cell(r_idx, 1)
+        set_cell_margins(cell_val, top=120, bottom=120, left=150, right=150)
+        p_val = cell_val.paragraphs[0]
+        p_val.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        r_val = p_val.add_run(val)
+        r_val.font.name = "Arial"
+        r_val.font.size = Pt(10.5)
+        r_val.font.color.rgb = RGBColor(0, 0, 0)
+
+    # Row 4 (Table header)
+    headers = [("Order:", WD_ALIGN_PARAGRAPH.LEFT), ("Full name", WD_ALIGN_PARAGRAPH.LEFT), ("Roll No.", WD_ALIGN_PARAGRAPH.LEFT)]
+    for c_idx, (text, align) in enumerate(headers):
+        cell = table_info.cell(4, c_idx)
+        set_cell_margins(cell, top=120, bottom=120, left=150, right=150)
         p = cell.paragraphs[0]
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.alignment = align
         r = p.add_run(text)
         r.bold = True
-        r.font.color.rgb = RGBColor(255, 255, 255)
-    members_data = [
-        ("1.", "Hua Truong An", "Student1414334"),
-        ("2.", "Le Ba Thanh", "Student1409136"),
-        ("3.", "Nguyen Trung Quan", "Student1414325"),
-        ("4.", "Bui Tran Anh Tri", "Student1414230")
+        r.font.name = "Arial"
+        r.font.size = Pt(10.5)
+        r.font.color.rgb = RGBColor(0, 0, 0)
+
+    # Rows 5 to 7 (Members list)
+    members_list = [
+        ("1.", "Đỗ Nguyễn Thiện Hoàng", "Student1545463"),
+        ("2.", "Trần Quang Khải", "Student1457498"),
+        ("3.", "Phan Văn Duy", "Student1470114")
     ]
-    for row_idx, row_info in enumerate(members_data):
-        for col_idx, text in enumerate(row_info):
-            cell = table_members.cell(row_idx+1, col_idx)
-            set_cell_margins(cell, top=60, bottom=60, left=80, right=80)
-            p = cell.paragraphs[0]
-            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            p.add_run(text)
-            
+
+    for i, (order, name, roll) in enumerate(members_list):
+        r_idx = 5 + i
+        # Col 0 (Order)
+        c0 = table_info.cell(r_idx, 0)
+        set_cell_margins(c0, top=120, bottom=120, left=150, right=150)
+        p0 = c0.paragraphs[0]
+        p0.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        r0 = p0.add_run(order)
+        r0.font.name = "Arial"
+        r0.font.size = Pt(10.5)
+        r0.font.color.rgb = RGBColor(0, 0, 0)
+
+        # Col 1 (Full name)
+        c1 = table_info.cell(r_idx, 1)
+        set_cell_margins(c1, top=120, bottom=120, left=150, right=150)
+        p1 = c1.paragraphs[0]
+        p1.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        r1 = p1.add_run(name)
+        r1.font.name = "Arial"
+        r1.font.size = Pt(10.5)
+        r1.font.color.rgb = RGBColor(0, 0, 0)
+
+        # Col 2 (Roll No.)
+        c2 = table_info.cell(r_idx, 2)
+        set_cell_margins(c2, top=120, bottom=120, left=150, right=150)
+        p2 = c2.paragraphs[0]
+        p2.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        r2 = p2.add_run(roll)
+        r2.font.name = "Arial"
+        r2.font.size = Pt(10.5)
+        r2.font.color.rgb = RGBColor(0, 0, 0)
+
+    # Set widths on all cells
+    for row in table_info.rows:
+        for c_idx, width in enumerate(col_widths):
+            try:
+                row.cells[c_idx].width = width
+            except Exception:
+                pass
+
     doc.add_page_break()
 
     # ─── TABLE OF CONTENTS ───
@@ -805,7 +1095,7 @@ def main():
     add_bullet("Technology Summary: React, TypeScript, Tailwind CSS, Spring Boot REST APIs, JPA Hibernate.")
     
     add_h2("Task Sheet Review 1")
-    t_wbs1 = doc.add_table(rows=5, cols=4)
+    t_wbs1 = doc.add_table(rows=4, cols=4)
     t_wbs1.alignment = WD_TABLE_ALIGNMENT.CENTER
     set_table_borders(t_wbs1)
     wbs1_headers = ["Member Name", "Assigned Task", "Period", "Status"]
@@ -816,10 +1106,9 @@ def main():
         r.bold = True
         r.font.color.rgb = RGBColor(255, 255, 255)
     wbs1_rows = [
-        ("Hua Truong An", "High-level Use Case, WBS Planning", "Week 1", "Completed"),
-        ("Le Ba Thanh", "Use Case List, Actor Mapping", "Week 1", "Completed"),
-        ("Nguyen Trung Quan", "Product Background, Overview", "Week 1", "Completed"),
-        ("Bui Tran Anh Tri", "System Requirements, Hardware/Software Specs", "Week 1", "Completed")
+        ("Đỗ Nguyễn Thiện Hoàng", "High-level Use Case, WBS Planning & Timetable Setup", "Week 1", "Completed"),
+        ("Trần Quang Khải", "Use Case List, Actor Mapping & Product Overview", "Week 1", "Completed"),
+        ("Phan Văn Duy", "System Requirements, Hardware/Software Specs & Scope", "Week 1", "Completed")
     ]
     for row_idx, row_info in enumerate(wbs1_rows):
         for col_idx, text in enumerate(row_info):
@@ -993,7 +1282,7 @@ def main():
     p_cap_erd.add_run("Figure 4.1: Logical Entity Relationship Diagram").italic = True
 
     add_h2("Task Sheet Review 2")
-    t_wbs2 = doc.add_table(rows=5, cols=4)
+    t_wbs2 = doc.add_table(rows=4, cols=4)
     t_wbs2.alignment = WD_TABLE_ALIGNMENT.CENTER
     set_table_borders(t_wbs2)
     for col_idx, text in enumerate(wbs1_headers):
@@ -1003,10 +1292,9 @@ def main():
         r.bold = True
         r.font.color.rgb = RGBColor(255, 255, 255)
     wbs2_rows = [
-        ("Hua Truong An", "Architecture Design, DFD Diagrams", "Week 2", "Completed"),
-        ("Le Ba Thanh", "Use Case Sequence Diagrams", "Week 2", "Completed"),
-        ("Nguyen Trung Quan", "Table Definitions, Index Configuration", "Week 2", "Completed"),
-        ("Bui Tran Anh Tri", "Entity Relationship Diagram (ERD)", "Week 2", "Completed")
+        ("Đỗ Nguyễn Thiện Hoàng", "Architecture Design & Level 0 DFD Diagram", "Week 2", "Completed"),
+        ("Trần Quang Khải", "Use Case Specifications & Sequence Diagrams", "Week 2", "Completed"),
+        ("Phan Văn Duy", "Database Schema, Indexes & Entity Relationship Diagram (ERD)", "Week 2", "Completed")
     ]
     for row_idx, row_info in enumerate(wbs2_rows):
         for col_idx, text in enumerate(row_info):
@@ -1161,29 +1449,37 @@ def main():
     add_body("Below are mobile UI screen elements maps mapping events and descriptions:")
 
     mobile_mappings = [
-        ("3.1 Mobile Login/Register Screen", "media__1782036432724.png",
-         "Authenticates mobile portal sessions.",
-         [("1", "Email field", "Input text", "Enter registered email address."),
-          ("2", "Password field", "Input text", "Enter credentials password."),
-          ("3", "Sign In Button", "Click button", "Submits login request to authenticate.")]),
+        ("3.1 Mobile Login Screen", "mobile_login_v2_1782284921557.png",
+         "The Login screen serves as the secure entry gateway for students, parents, and teachers accessing the eStudiez portal on mobile. It intercepts unauthenticated requests and requests verification via JWT. There is no public registration button as accounts are strictly pre-allocated by the school administration for safety.",
+         [("1", "Logo Brand Icon", "View Item", "Visible at the top center of the screen.", "Displays the eStudiez purple gradient lightning-bolt logo to ensure brand recognition and app security."),
+          ("2", "Username Input Field", "Input Text", "Must match the school-assigned username/email format (e.g., student.name@estudiez.edu.vn).", "The user enters their registered credential username or school-issued email to initiate authentication."),
+          ("3", "Password Input Field", "Input Text", "Masked character display. Length between 6 to 32 characters.", "The user enters their account password corresponding to their username."),
+          ("4", "Sign In Button", "Click Button", "Enabled only when username and password fields are not empty.", "Submits the credentials to the backend Spring Boot REST API (/api/auth/login) which responds with a JWT token upon successful authentication."),
+          ("5", "Administrator Notice Label", "View Text", "Static read-only text at the bottom footer.", "Informs users that account creation is managed by school administrators to prevent unauthorized student registrations.")]),
           
-        ("3.2 Mobile Dashboard Home", "media__1782016898396.png",
-         "Mobile home widget slider showing bulletins and daily schedules.",
-         [("1", "Timetable shortcut", "Click card", "Opens weekly timetable view grid."),
-          ("2", "Announcement Slider", "Swipe banner", "Browse recent news updates."),
-          ("3", "Bottom Nav Bar", "Click icon", "Tabs: Home, Timetable, Notifications, Profile.")]),
+        ("3.2 Mobile Dashboard Home", "mobile_dashboard_v2_1782284936073.png",
+         "The Mobile Dashboard acts as the central hub for students, parents, and teachers, providing a summary of the current day's schedule, key notifications, and school announcements for rapid navigation.",
+         [("1", "Header Brand Logo & Label", "View Item", "Fixed in the top navigation header.", "Renders the purple-blue lightning logo and active user profile avatar."),
+          ("2", "Today's Timetable Widget", "Click Card", "Updates dynamically based on the current system date.", "Displays the student's scheduled classes and periods for today. Clicking it navigates to the full weekly timetable grid."),
+          ("3", "Announcement Carousel Slider", "Swipe Banner / Click Slide", "Refreshes every 24 hours or on pull-to-refresh.", "Cycles through recent news headlines and events published by school administrators. Clicking a banner opens the rich news article detail."),
+          ("4", "Home Tab Icon", "Click Icon", "Highlighted when active.", "Returns the user to this main dashboard home screen."),
+          ("5", "Timetable Tab Icon", "Click Icon", "Provides access to student schedule.", "Redirects the user to the full academic class scheduling view."),
+          ("6", "Notifications Tab Icon", "Click Icon", "Displays a badge count for unread notifications.", "Opens the notification feed for announcements, assignment updates, or attendance alerts."),
+          ("7", "Profile Tab Icon", "Click Icon", "Provides access to account configurations.", "Redirects the user to the profile summary and settings panel.")]),
           
-        ("3.3 Mobile Student Progress", "media__1782017160207.png",
-         "View child's attendance and marks records on mobile.",
-         [("1", "Progress Overview stats", "View panel", "Shows attendance and grade statistics summaries."),
-          ("2", "Semester Toggler", "Select option", "Toggles data between Semester 1 and 2."),
-          ("3", "Subject cards list", "Click header", "Opens subject marks list details.")]),
+        ("3.3 Mobile Student Progress", "mobile_progress_v2_1782284952189.png",
+         "The Student Progress screen provides real-time transparency for parents and students regarding academic grades and attendance records, encouraging proactive learning and monitoring.",
+         [("1", "GPA Statistics Summary Card", "View Panel", "Calculates average grade point based on active semester marks.", "Renders the student's cumulative Grade Point Average (GPA) in a circular progress indicator."),
+          ("2", "Attendance Ratio Card", "View Panel", "Derived from total period logs (Present / Total Classes).", "Displays the attendance percentage (e.g. 95%) to monitor overall student class attendance."),
+          ("3", "Semester Selection Dropdown", "Select Dropdown Item", "Defaults to the current active school semester.", "Toggles the academic statistics and course lists between Semester 1 and Semester 2."),
+          ("4", "Subject Grade List Card", "Click List Header", "Scrollable list view.", "Lists enrolled subjects (e.g. Mathematics, Chemistry, English) alongside their current grade letter and numerical progress bar. Clicking a subject reveals assignment and exam breakdown details.")]),
           
-        ("3.4 Mobile User Profile", "media__1782039211975.png",
-         "Displays contact information, settings, and sign-out button.",
-         [("1", "Edit Profile Button", "Click link", "Opens screen to edit phone number and email."),
-          ("2", "Change Password Button", "Click link", "Opens password update page."),
-          ("3", "Sign Out Button", "Click button", "Logs user session out of mobile device.")])
+        ("3.4 Mobile User Profile", "mobile_profile_v2_1782284965957.png",
+         "The User Profile screen houses account identity details, security change tools, and the exit interface to clear active JWT sessions.",
+         [("1", "User Identity Header", "View Item", "Renders student profile picture from server database.", "Displays the student's full name, unique student ID, and registered academic class."),
+          ("2", "Information Cards list", "View Text", "Read-only text.", "Lists account attributes including registered Email, Parent contact number, and Date of birth."),
+          ("3", "Change Password Button", "Click Link", "Requires verification of current password.", "Directs the user to a secure modal interface to update their password."),
+          ("4", "Sign Out Button", "Click Button", "Clears local JWT cache upon execution.", "Terminates the mobile session, purges the stored JWT token, and redirects the user back to the login screen.")])
     ]
 
     for m_title, m_file, m_desc, items in mobile_mappings:
@@ -1198,10 +1494,11 @@ def main():
         else:
             add_body("[Mobile screenshot file missing]", italic=True)
             
-        t_mob = doc.add_table(rows=len(items)+1, cols=4)
+        t_mob = doc.add_table(rows=len(items)+1, cols=5)
         t_mob.alignment = WD_TABLE_ALIGNMENT.CENTER
         set_table_borders(t_mob)
-        for col_idx, text in enumerate(headers_sc):
+        headers_sc_mob = ["No", "Name", "Event", "Constraint", "Description"]
+        for col_idx, text in enumerate(headers_sc_mob):
             cell = t_mob.cell(0, col_idx)
             set_cell_background(cell, "1E3A8A")
             cell.paragraphs[0].add_run(text).bold = True
@@ -1221,7 +1518,7 @@ def main():
 
     # ─── SECTION 4: TASK SHEET REVIEW 3 ───
     add_h2("Task Sheet Review 3")
-    t_wbs3 = doc.add_table(rows=5, cols=4)
+    t_wbs3 = doc.add_table(rows=4, cols=4)
     t_wbs3.alignment = WD_TABLE_ALIGNMENT.CENTER
     set_table_borders(t_wbs3)
     for col_idx, text in enumerate(wbs1_headers):
@@ -1231,10 +1528,9 @@ def main():
         r.bold = True
         r.font.color.rgb = RGBColor(255, 255, 255)
     wbs3_rows = [
-        ("Hua Truong An", "Spring Boot Backend REST APIs, JPA mapping", "Weeks 3-4", "Completed"),
-        ("Le Ba Thanh", "Vite Frontend React Screens, Routing setup", "Weeks 3-4", "Completed"),
-        ("Nguyen Trung Quan", "Database Seeding (SQL scripts), Index Testing", "Weeks 3-4", "Completed"),
-        ("Bui Tran Anh Tri", "Integration Testing, CI/CD pipeline setup", "Week 5", "Completed")
+        ("Đỗ Nguyễn Thiện Hoàng", "Spring Boot Backend REST APIs, JPA mapping & Integration Testing", "Weeks 3-5", "Completed"),
+        ("Trần Quang Khải", "Vite Frontend React Screens, Routing & UI Integration", "Weeks 3-4", "Completed"),
+        ("Phan Văn Duy", "Database Seeding SQL Scripts, Index Testing & Deployment", "Weeks 3-5", "Completed")
     ]
     for row_idx, row_info in enumerate(wbs3_rows):
         for col_idx, text in enumerate(row_info):
@@ -1257,29 +1553,29 @@ def main():
         r.font.color.rgb = RGBColor(255, 255, 255)
         r.font.size = Pt(9)
     pts_rows = [
-        ("Thành", "Teacher Backend (Springboot) Setup", "14/06/2026", "18/06/2026", "Complete"),
-        ("Thành", "Attendance record JPA controller", "18/06/2026", "20/06/2026", "Complete"),
-        ("Thành", "Marks grading database controller", "20/06/2026", "23/06/2026", "Complete"),
-        ("Thành", "Study resources JPA uploads API", "23/06/2026", "25/06/2026", "Complete"),
-        ("Thành", "Class Notifications broadcast system", "25/06/2026", "27/06/2026", "Complete"),
-        ("Thành", "Teacher Frontend (Vite React) Setup", "01/07/2026", "06/07/2026", "Complete"),
-        ("Thành", "Attendance Grid UI view and radios", "06/07/2026", "10/07/2026", "Complete"),
-        ("Thành", "Marks grading roster and accordion", "10/07/2026", "15/07/2026", "Complete"),
-        ("Thành", "AI learning path Auto-Fill button", "15/07/2026", "17/07/2026", "Complete"),
-        ("Thành", "Mobile App (Flutter) teacher views", "17/07/2026", "31/07/2026", "Complete"),
-        ("Quân", "Admin Backend (Springboot) Setup", "14/06/2026", "18/06/2026", "Complete"),
-        ("Quân", "User Management CRUD JPA mapping", "18/06/2026", "22/06/2026", "Complete"),
-        ("Quân", "Class Configuration & Assignings API", "22/06/2026", "25/06/2026", "Complete"),
-        ("Quân", "News bulletins & events publishing", "25/06/2026", "27/06/2026", "Complete"),
-        ("Quân", "Admin Frontend (Vite React) Setup", "01/07/2026", "05/07/2026", "Complete"),
-        ("Quân", "User accounts list & edit modals", "05/07/2026", "10/07/2026", "Complete"),
-        ("Quân", "Class assignment mappings selectors", "10/07/2026", "15/07/2026", "Complete"),
-        ("Quân", "News posts rich editor integration", "15/07/2026", "18/07/2026", "Complete"),
-        ("Quân", "Mobile App (Flutter) admin dashboards", "18/07/2026", "31/07/2026", "Complete"),
-        ("Trí", "Student Backend (Springboot) Setup", "14/06/2026", "18/06/2026", "Complete"),
-        ("Trí", "Timetable fetch endpoints", "18/06/2026", "22/06/2026", "Complete"),
-        ("Trí", "Marks & attendance results API", "22/06/2026", "26/06/2026", "Complete"),
-        ("Trí", "Resources download controllers", "26/06/2026", "30/06/2026", "Complete")
+        ("Hoàng", "Teacher Backend (Springboot) Setup", "14/06/2026", "18/06/2026", "Complete"),
+        ("Hoàng", "Attendance record JPA controller", "18/06/2026", "20/06/2026", "Complete"),
+        ("Hoàng", "Marks grading database controller", "20/06/2026", "23/06/2026", "Complete"),
+        ("Hoàng", "Study resources JPA uploads API", "23/06/2026", "25/06/2026", "Complete"),
+        ("Hoàng", "Class Notifications broadcast system", "25/06/2026", "27/06/2026", "Complete"),
+        ("Hoàng", "Teacher Frontend (Vite React) Setup", "01/07/2026", "06/07/2026", "Complete"),
+        ("Hoàng", "Attendance Grid UI view and radios", "06/07/2026", "10/07/2026", "Complete"),
+        ("Hoàng", "Marks grading roster and accordion", "10/07/2026", "15/07/2026", "Complete"),
+        ("Hoàng", "AI learning path Auto-Fill button", "15/07/2026", "17/07/2026", "Complete"),
+        ("Hoàng", "Mobile App (Flutter) teacher views", "17/07/2026", "31/07/2026", "Complete"),
+        ("Khải", "Admin Backend (Springboot) Setup", "14/06/2026", "18/06/2026", "Complete"),
+        ("Khải", "User Management CRUD JPA mapping", "18/06/2026", "22/06/2026", "Complete"),
+        ("Khải", "Class Configuration & Assignings API", "22/06/2026", "25/06/2026", "Complete"),
+        ("Khải", "News bulletins & events publishing", "25/06/2026", "27/06/2026", "Complete"),
+        ("Khải", "Admin Frontend (Vite React) Setup", "01/07/2026", "05/07/2026", "Complete"),
+        ("Khải", "User accounts list & edit modals", "05/07/2026", "10/07/2026", "Complete"),
+        ("Khải", "Class assignment mappings selectors", "10/07/2026", "15/07/2026", "Complete"),
+        ("Khải", "News posts rich editor integration", "15/07/2026", "18/07/2026", "Complete"),
+        ("Khải", "Mobile App (Flutter) admin dashboards", "18/07/2026", "31/07/2026", "Complete"),
+        ("Duy", "Student Backend (Springboot) Setup", "14/06/2026", "18/06/2026", "Complete"),
+        ("Duy", "Timetable fetch endpoints", "18/06/2026", "22/06/2026", "Complete"),
+        ("Duy", "Marks & attendance results API", "22/06/2026", "26/06/2026", "Complete"),
+        ("Duy", "Resources download controllers", "26/06/2026", "30/06/2026", "Complete")
     ]
     for row_idx, row_info in enumerate(pts_rows):
         for col_idx, text in enumerate(row_info):

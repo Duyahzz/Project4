@@ -36,14 +36,9 @@ export function HomePage() {
               Open Dashboard
             </Link>
           ) : (
-            <>
-              <Link to="/login" className="bg-white text-indigo-700 hover:bg-indigo-50 px-4 py-2 rounded-md font-semibold text-sm">
-                Sign In
-              </Link>
-              <Link to="/register" className="border border-white/60 hover:bg-white/10 px-4 py-2 rounded-md font-semibold text-sm">
-                Register
-              </Link>
-            </>
+            <Link to="/login" className="bg-white text-indigo-700 hover:bg-indigo-50 px-4 py-2 rounded-md font-semibold text-sm">
+              Sign In
+            </Link>
           )}
         </div>
       </section>

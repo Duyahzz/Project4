@@ -309,18 +309,39 @@ interface AttendanceTabProps {
 }
 
 function AttendanceTab({ subject, classIds, studentsByClass }: AttendanceTabProps) {
-  const { timetable, attendance, saveAttendanceBatch, classes } = useData()
+  const { timetable, attendance, saveAttendanceBatch, classes, semesters } = useData()
   const { currentUser } = useAuth()
   const { push } = useToast()
+
+  // ── Semester selector ──────────────────────────────────────────────────────
+  const [selectedSemId, setSelectedSemId] = useState<string>(() => semesters[0]?.id ?? '')
 
   const [weekStart, setWeekStart] = useState(() => getMonday(new Date()))
   const [activeSlot, setActiveSlot] = useState<TimetableSlot | null>(null)
   const [statuses, setStatuses] = useState<Record<string, AttendanceStatus>>({})
   const [notes, setNotes] = useState<Record<string, string>>({})
 
+  // When semester changes, jump weekStart to the semester's start date (or today if no date)
+  useEffect(() => {
+    const sem = semesters.find((s) => s.id === selectedSemId)
+    if (sem?.startDate) {
+      setWeekStart(getMonday(new Date(sem.startDate + 'T00:00:00')))
+    } else {
+      setWeekStart(getMonday(new Date()))
+    }
+    setActiveSlot(null)
+  }, [selectedSemId, semesters])
+
   const mySlots = useMemo(
-    () => timetable.filter((s) => s.subject === subject && classIds.includes(s.classId)),
-    [timetable, subject, classIds],
+    () => {
+      const base = timetable.filter((s) => s.subject === subject && classIds.includes(s.classId))
+      if (!selectedSemId) return base
+      // If slots have semesterId, filter by it; otherwise show all
+      const hasSemInfo = base.some((s) => s.semesterId)
+      if (!hasSemInfo) return base
+      return base.filter((s) => !s.semesterId || s.semesterId === selectedSemId)
+    },
+    [timetable, subject, classIds, selectedSemId],
   )
 
   /** All distinct periods that appear in the teacher's timetable, sorted */
@@ -390,11 +411,29 @@ function AttendanceTab({ subject, classIds, studentsByClass }: AttendanceTabProp
     }
   }
 
-  // Generate dropdown options: 4 weeks back → 4 weeks forward (9 total)
+  // Generate dropdown options covering the selected semester's full range
   const weekOptions = useMemo(() => {
-    const today = getMonday(new Date())
+    const sem = semesters.find((s) => s.id === selectedSemId)
     const fmtOpt = (d: Date) =>
       d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+
+    // If semester has date bounds, enumerate every Monday inside those bounds
+    if (sem?.startDate && sem?.endDate) {
+      const start = getMonday(new Date(sem.startDate + 'T00:00:00'))
+      const end = new Date(sem.endDate + 'T00:00:00')
+      const options: { value: string; label: string }[] = []
+      const cur = new Date(start)
+      while (cur <= end) {
+        const sat = new Date(cur)
+        sat.setDate(sat.getDate() + 5)
+        options.push({ value: localDateStr(cur), label: `${fmtOpt(cur)} – ${fmtOpt(sat)}` })
+        cur.setDate(cur.getDate() + 7)
+      }
+      return options
+    }
+
+    // Fallback: 4 weeks back → 4 weeks forward (9 total)
+    const today = getMonday(new Date())
     return Array.from({ length: 9 }, (_, i) => {
       const mon = new Date(today)
       mon.setDate(mon.getDate() + (i - 4) * 7)
@@ -402,10 +441,43 @@ function AttendanceTab({ subject, classIds, studentsByClass }: AttendanceTabProp
       sat.setDate(sat.getDate() + 5)
       return { value: localDateStr(mon), label: `${fmtOpt(mon)} – ${fmtOpt(sat)}` }
     })
-  }, [])
+  }, [selectedSemId, semesters])
 
   return (
     <div className="space-y-4">
+      {/* ── Semester selector ── */}
+      {semesters.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Học kỳ:</span>
+          <div className="flex rounded-lg overflow-hidden border border-slate-200 shadow-sm">
+            {semesters.map((sem) => (
+              <button
+                key={sem.id}
+                type="button"
+                onClick={() => setSelectedSemId(sem.id)}
+                className={[
+                  'px-4 py-1.5 text-sm font-medium transition-colors',
+                  selectedSemId === sem.id
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-white text-slate-600 hover:bg-indigo-50 hover:text-indigo-700',
+                ].join(' ')}
+              >
+                {sem.name}
+              </button>
+            ))}
+          </div>
+          {(() => {
+            const sem = semesters.find((s) => s.id === selectedSemId)
+            if (!sem?.startDate || !sem?.endDate) return null
+            return (
+              <span className="text-xs text-slate-400">
+                ({sem.startDate} → {sem.endDate})
+              </span>
+            )
+          })()}
+        </div>
+      )}
+
       {/* Week selector */}
       <div className="flex items-center gap-2">
         <button

@@ -70,14 +70,9 @@ export function Layout() {
               Contact
             </NavLink>
             {!currentUser ? (
-              <>
-                <NavLink to="/login" className={navLinkClass}>
-                  Login
-                </NavLink>
-                <NavLink to="/register" className={navLinkClass}>
-                  Register
-                </NavLink>
-              </>
+              <NavLink to="/login" className={navLinkClass}>
+                Login
+              </NavLink>
             ) : null}
           </nav>
           <div className="flex items-center gap-3">
