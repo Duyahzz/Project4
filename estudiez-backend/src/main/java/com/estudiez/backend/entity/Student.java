@@ -34,6 +34,9 @@ public class Student {
     @Column(nullable = false, length = 30)
     private String status = "ACTIVE";
 
+    @Column()
+    private Integer currentGrade;
+
     @CreationTimestamp
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;

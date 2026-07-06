@@ -3,6 +3,7 @@ package com.estudiez.backend.controller;
 import com.estudiez.backend.entity.Parent;
 import com.estudiez.backend.entity.Student;
 import com.estudiez.backend.entity.StudentParentLink;
+import com.estudiez.backend.entity.StudentGradeProgression;
 import com.estudiez.backend.service.ParentService;
 import com.estudiez.backend.service.StudentService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -46,6 +47,24 @@ public class StudentController {
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         studentService.delete(id);
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/by-grade/{grade}")
+    @Operation(summary = "Get all students with a specific grade")
+    public List<Student> getByGrade(@PathVariable Integer grade) {
+        return studentService.findByGrade(grade);
+    }
+
+    @GetMapping("/by-grade-active/{grade}")
+    @Operation(summary = "Get all active students with a specific grade")
+    public List<Student> getActiveByGrade(@PathVariable Integer grade) {
+        return studentService.findActiveByGrade(grade);
+    }
+
+    @GetMapping("/{id}/grade-history")
+    @Operation(summary = "Get grade progression history for a student")
+    public List<StudentGradeProgression> getGradeHistory(@PathVariable UUID id) {
+        return studentService.getProgressionHistory(id);
     }
 
     // ── Student → Parents ─────────────────────────────────────────────────────

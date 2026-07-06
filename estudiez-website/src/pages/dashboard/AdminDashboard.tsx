@@ -7,6 +7,7 @@ import { Tabs } from '../../components/Tabs'
 import { useAuth } from '../../hooks/useAuth'
 import { useData } from '../../hooks/useData'
 import { useToast } from '../../hooks/useToast'
+import { promoteAllStudents, assignGradeToStudent, markStudentAsGraduated } from '../../services/api'
 import { userDetailPath } from '../userDetailPath'
 import { chatGroupDetailPath } from '../chatGroupDetailPath'
 import { classDetailPath } from '../classDetailPath'
@@ -45,6 +46,7 @@ export function AdminDashboard() {
               content: <ManageRequests />,
             },
             { id: 'students', label: 'Students', content: <ManageStudents /> },
+            { id: 'grades', label: 'Grade Management', content: <ManageGrades /> },
             { id: 'teachers', label: 'Teachers', content: <ManageTeachers /> },
             { id: 'parents', label: 'Parents', content: <ManageParents /> },
             { id: 'classes', label: 'Classes', content: <ManageClasses /> },
@@ -399,6 +401,246 @@ function ManageStudents() {
           </table>
         </div>
       </Card>
+    </div>
+  )
+}
+
+function ManageGrades() {
+  const { users } = useData()
+  const { push } = useToast()
+  const [activeTab, setActiveTab] = useState<'promotion' | 'graduation' | 'assign'>('promotion')
+  const [selectedSchoolYear, setSelectedSchoolYear] = useState<string>('2024')
+  const [selectedGradeLevel, setSelectedGradeLevel] = useState<10 | 11 | 12>(10)
+  const [selectedStudentEmail, setSelectedStudentEmail] = useState<string>('')
+  const [isPromoting, setIsPromoting] = useState(false)
+  const [isGraduating, setIsGraduating] = useState(false)
+  const [isAssigning, setIsAssigning] = useState(false)
+
+  const students = users.filter((u) => u.role === 'student')
+  const studentsByGrade = {
+    10: students.filter((s) => s.grade === 10),
+    11: students.filter((s) => s.grade === 11),
+    12: students.filter((s) => s.grade === 12),
+  }
+
+  const handlePromoteAll = async () => {
+    if (!window.confirm('Promote all students to the next grade? Grade 12 students will not be promoted.')) {
+      return
+    }
+    setIsPromoting(true)
+    try {
+      await promoteAllStudents(parseInt(selectedSchoolYear))
+      push('success', 'All students promoted successfully.')
+    } catch (err) {
+      push('error', 'Failed to promote students.')
+      console.error(err)
+    } finally {
+      setIsPromoting(false)
+    }
+  }
+
+  const handleGraduateStudent = async () => {
+    if (!selectedStudentEmail) {
+      push('info', 'Select a student first.')
+      return
+    }
+    const student = students.find((s) => s.email === selectedStudentEmail)
+    if (student?.grade !== 12) {
+      push('error', 'Only Grade 12 students can be marked as graduated.')
+      return
+    }
+    if (!window.confirm(`Mark ${student.fullName} as graduated?`)) {
+      return
+    }
+    setIsGraduating(true)
+    try {
+      const studentId = student.userId || student.email
+      await markStudentAsGraduated(studentId)
+      push('success', `${student.fullName} marked as graduated.`)
+      setSelectedStudentEmail('')
+    } catch (err) {
+      push('error', 'Failed to mark student as graduated.')
+      console.error(err)
+    } finally {
+      setIsGraduating(false)
+    }
+  }
+
+  const handleAssignGrade = async () => {
+    if (!selectedStudentEmail || !selectedGradeLevel) {
+      push('info', 'Select a student and grade level.')
+      return
+    }
+    const student = students.find((s) => s.email === selectedStudentEmail)
+    if (!student) {
+      push('error', 'Student not found.')
+      return
+    }
+    if (!window.confirm(`Assign Grade ${selectedGradeLevel} to ${student.fullName}?`)) {
+      return
+    }
+    setIsAssigning(true)
+    try {
+      const studentId = student.userId || student.email
+      const gradeId = selectedGradeLevel === 10 ? 1 : selectedGradeLevel === 11 ? 2 : 3
+      await assignGradeToStudent(studentId, gradeId)
+      push('success', `Grade ${selectedGradeLevel} assigned to ${student.fullName}.`)
+      setSelectedStudentEmail('')
+    } catch (err) {
+      push('error', 'Failed to assign grade.')
+      console.error(err)
+    } finally {
+      setIsAssigning(false)
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex border-b border-slate-200 gap-1">
+        <button
+          onClick={() => setActiveTab('promotion')}
+          className={`px-4 py-2 text-sm font-semibold ${
+            activeTab === 'promotion'
+              ? 'border-b-2 border-indigo-600 text-indigo-600'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          Year-End Promotion
+        </button>
+        <button
+          onClick={() => setActiveTab('graduation')}
+          className={`px-4 py-2 text-sm font-semibold ${
+            activeTab === 'graduation'
+              ? 'border-b-2 border-indigo-600 text-indigo-600'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          Graduation
+        </button>
+        <button
+          onClick={() => setActiveTab('assign')}
+          className={`px-4 py-2 text-sm font-semibold ${
+            activeTab === 'assign'
+              ? 'border-b-2 border-indigo-600 text-indigo-600'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          Assign Grade
+        </button>
+      </div>
+
+      {activeTab === 'promotion' && (
+        <Card title="Year-End Grade Promotion" description="Promote all eligible students to the next grade.">
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">School Year</label>
+              <select
+                value={selectedSchoolYear}
+                onChange={(e) => setSelectedSchoolYear(e.target.value)}
+                className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
+              >
+                <option value="2024">2024</option>
+                <option value="2025">2025</option>
+                <option value="2026">2026</option>
+              </select>
+            </div>
+            <div className="bg-slate-50 border border-slate-200 rounded-md p-4">
+              <h4 className="font-semibold text-slate-900 mb-2">Promotion Summary</h4>
+              <ul className="space-y-1 text-sm text-slate-700">
+                <li>Grade 10 → Grade 11: <span className="font-semibold">{studentsByGrade[10].length} students</span></li>
+                <li>Grade 11 → Grade 12: <span className="font-semibold">{studentsByGrade[11].length} students</span></li>
+                <li>Grade 12 students: <span className="text-amber-600">Not promoted (eligible for graduation)</span></li>
+              </ul>
+            </div>
+            <button
+              onClick={handlePromoteAll}
+              disabled={isPromoting || (studentsByGrade[10].length === 0 && studentsByGrade[11].length === 0)}
+              className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-semibold rounded-md px-4 py-2"
+            >
+              {isPromoting ? 'Promoting...' : 'Promote All Students'}
+            </button>
+          </div>
+        </Card>
+      )}
+
+      {activeTab === 'graduation' && (
+        <Card title="Mark Student as Graduated" description="Mark Grade 12 students as graduated.">
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Select Grade 12 Student</label>
+              <select
+                value={selectedStudentEmail}
+                onChange={(e) => setSelectedStudentEmail(e.target.value)}
+                className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
+              >
+                <option value="">-- Select a student --</option>
+                {studentsByGrade[12].map((s) => (
+                  <option key={s.email} value={s.email}>
+                    {s.fullName} ({s.email})
+                  </option>
+                ))}
+              </select>
+              {studentsByGrade[12].length === 0 && (
+                <p className="text-sm text-slate-500 mt-2">No Grade 12 students found.</p>
+              )}
+            </div>
+            <button
+              onClick={handleGraduateStudent}
+              disabled={isGraduating || !selectedStudentEmail}
+              className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white font-semibold rounded-md px-4 py-2"
+            >
+              {isGraduating ? 'Marking...' : 'Mark as Graduated'}
+            </button>
+          </div>
+        </Card>
+      )}
+
+      {activeTab === 'assign' && (
+        <Card title="Assign Grade to New Student" description="Assign a grade level to students pending grade assignment.">
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Select Student</label>
+              <select
+                value={selectedStudentEmail}
+                onChange={(e) => setSelectedStudentEmail(e.target.value)}
+                className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
+              >
+                <option value="">-- Select a student --</option>
+                {students.map((s) => (
+                  <option key={s.email} value={s.email}>
+                    {s.fullName} ({s.email}) - Current: {s.grade || 'Unassigned'}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Grade Level</label>
+              <div className="flex gap-2">
+                {([10, 11, 12] as const).map((grade) => (
+                  <button
+                    key={grade}
+                    onClick={() => setSelectedGradeLevel(grade)}
+                    className={`flex-1 py-2 font-semibold rounded-md border ${
+                      selectedGradeLevel === grade
+                        ? 'bg-indigo-600 border-indigo-600 text-white'
+                        : 'border-slate-300 text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    Grade {grade}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <button
+              onClick={handleAssignGrade}
+              disabled={isAssigning || !selectedStudentEmail}
+              className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-semibold rounded-md px-4 py-2"
+            >
+              {isAssigning ? 'Assigning...' : 'Assign Grade'}
+            </button>
+          </div>
+        </Card>
+      )}
     </div>
   )
 }

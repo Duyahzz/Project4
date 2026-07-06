@@ -396,6 +396,99 @@ export function StudentDashboard() {
             </Card>
           ),
         },
+        {
+          id: 'grade-progress',
+          label: 'Grade Progress',
+          content: (
+            <div className="space-y-4">
+              <Card title="Current Grade Status">
+                <div className="grid sm:grid-cols-3 gap-4">
+                  <div className="border-2 border-indigo-600 rounded-lg p-4 text-center">
+                    <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Current Grade</p>
+                    <p className="text-4xl font-bold text-indigo-600">{currentUser?.grade ?? '—'}</p>
+                  </div>
+                  <div className="border border-slate-200 rounded-lg p-4 text-center">
+                    <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Class</p>
+                    <p className="text-2xl font-semibold text-slate-900">{studentClass?.name ?? '—'}</p>
+                  </div>
+                  <div className="border border-slate-200 rounded-lg p-4 text-center">
+                    <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">Academic Year</p>
+                    <p className="text-2xl font-semibold text-slate-900">{studentClass?.year ?? '—'}</p>
+                  </div>
+                </div>
+              </Card>
+
+              <Card title="Grade Progression History">
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="flex flex-col items-center">
+                      <div className="w-10 h-10 rounded-full bg-emerald-600 text-white flex items-center justify-center font-semibold text-sm">
+                        10
+                      </div>
+                      <div className="w-0.5 h-8 bg-slate-200 mt-1"></div>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-slate-900">Grade 10 - Entry</p>
+                      <p className="text-sm text-slate-600">Initial enrollment in secondary school</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <div className="flex flex-col items-center">
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold text-sm ${ currentUser?.grade && currentUser.grade >= 11 ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-400'}`}>
+                        11
+                      </div>
+                      <div className="w-0.5 h-8 bg-slate-200 mt-1"></div>
+                    </div>
+                    <div>
+                      <p className={`font-semibold ${ currentUser?.grade && currentUser.grade >= 11 ? 'text-slate-900' : 'text-slate-400'}`}>
+                        Grade 11 - Promotion
+                      </p>
+                      <p className={`text-sm ${ currentUser?.grade && currentUser.grade >= 11 ? 'text-slate-600' : 'text-slate-400'}`}>
+                        {currentUser?.grade && currentUser.grade >= 11 ? 'Completed' : 'Not yet reached'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold text-sm ${ currentUser?.grade === 12 ? 'bg-amber-600 text-white' : 'bg-slate-200 text-slate-400'}`}>
+                      12
+                    </div>
+                    <div>
+                      <p className={`font-semibold ${ currentUser?.grade === 12 ? 'text-slate-900' : 'text-slate-400'}`}>
+                        Grade 12 - Final Year
+                      </p>
+                      <p className={`text-sm ${ currentUser?.grade === 12 ? 'text-slate-600' : 'text-slate-400'}`}>
+                        {currentUser?.grade === 12 ? 'Currently in final year' : 'Not yet reached'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+
+              <Card title="Key Milestones">
+                <ul className="space-y-2 text-sm">
+                  <li className="flex items-start gap-3 p-3 bg-slate-50 rounded-lg">
+                    <span className="text-emerald-600 font-bold mt-0.5">✓</span>
+                    <span>Enrolled as Grade {currentUser?.grade ?? 'N/A'} student</span>
+                  </li>
+                  {currentUser?.grade && currentUser.grade >= 11 && (
+                    <li className="flex items-start gap-3 p-3 bg-slate-50 rounded-lg">
+                      <span className="text-indigo-600 font-bold mt-0.5">✓</span>
+                      <span>Promoted to Grade 11</span>
+                    </li>
+                  )}
+                  {currentUser?.grade === 12 && (
+                    <li className="flex items-start gap-3 p-3 bg-slate-50 rounded-lg">
+                      <span className="text-amber-600 font-bold mt-0.5">✓</span>
+                      <span>Promoted to Grade 12 - Final Year</span>
+                    </li>
+                  )}
+                </ul>
+              </Card>
+            </div>
+          ),
+        },
       ]}
     />
   )

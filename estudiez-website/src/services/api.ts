@@ -38,14 +38,15 @@ export type ApiMark        = components['schemas']['StudentMark']
 export type ApiRegistration = components['schemas']['RegistrationRequest']
 
 // ─── Base URL ────────────────────────────────────────────────────────────────
-// Empty string = same origin, so /api/* requests are proxied by Vite in dev
-// and served by the backend in production (no CORS issues either way).
-export const API_BASE = ''
+// Points to backend running on localhost:8081
+// CORS is handled by Spring Security configuration on the backend
+export const API_BASE = 'http://localhost:8081'
 
 // ─── Base fetch helpers ──────────────────────────────────────────────────────
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: { 'Content-Type': 'application/json', ...init?.headers },
+    credentials: 'include',
     ...init,
   })
   if (!res.ok) throw new Error(`[API] ${init?.method ?? 'GET'} ${path} → ${res.status}`)
@@ -151,6 +152,14 @@ export const getRegistrations       = () => apiGet<ApiRegistration[]>('/api/regi
 export const submitRegistrationApi  = (r: ApiRegistration) => apiPost<ApiRegistration>('/api/registrations', r)
 export const approveRegistrationApi = (id: number) => apiPatch<ApiRegistration>(`/api/registrations/${id}/approve`)
 export const rejectRegistrationApi  = (id: number) => apiPatch<ApiRegistration>(`/api/registrations/${id}/reject`)
+
+// ─── Grade Management ─────────────────────────────────────────────────────────
+export const promoteAllStudents = (schoolYearId: number) =>
+  apiPost<{ message: string }>('/api/admin/grade-management/promote-all-for-year', { schoolYearId })
+export const assignGradeToStudent = (studentId: string, gradeId: number) =>
+  apiPut<{ message: string }>(`/api/admin/grade-management/assign-grade/${studentId}`, { gradeId })
+export const markStudentAsGraduated = (studentId: string) =>
+  apiPut<{ message: string }>(`/api/admin/grade-management/mark-as-graduated/${studentId}`, {})
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 export interface LoginResponse {
