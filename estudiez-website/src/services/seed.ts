@@ -25,15 +25,15 @@ export const SEED_SEMESTERS: Semester[] = [
     id: 'S1-2025',
     name: 'Semester 1',
     year: '2025-2026',
-    startDate: '2025-09-01',
-    endDate: '2026-01-15',
+    startDate: '2025-12-01',
+    endDate: '2026-05-01',
   },
   {
     id: 'S2-2025',
     name: 'Semester 2',
     year: '2025-2026',
-    startDate: '2026-01-20',
-    endDate: '2026-06-30',
+    startDate: '2026-06-01',
+    endDate: '2026-11-06',
   },
 ]
 

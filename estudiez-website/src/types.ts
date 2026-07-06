@@ -52,11 +52,13 @@ export interface Semester {
 /** A planned assessment for a subject within a semester. A subject can have many. */
 export interface Exam {
   id: number
+  classId?: string
   semesterId: string
   subject: string
   name: string
   date: string
   completed: boolean
+  weight?: number
 }
 
 /** Mark report — điểm môn học. */

@@ -6,8 +6,16 @@ const DAYS: DayOfWeek[] = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const DAY_OFFSET: Record<DayOfWeek, number> = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5 }
 
 const PERIOD_TIME: Record<number, string> = {
-  1: '07:00', 2: '07:50', 3: '08:40', 4: '09:35',
-  5: '10:25', 6: '13:00', 7: '13:50', 8: '14:40', 9: '15:30', 10: '16:20',
+  1: '07:30–08:15',
+  2: '08:25–09:10',
+  3: '09:20–10:05',
+  4: '10:15–11:00',
+  5: '11:10–11:55',
+  6: '13:00–13:45',
+  7: '13:50–14:35',
+  8: '14:40–15:25',
+  9: '15:30–16:15',
+  10: '16:20–17:05',
 }
 
 const ATTENDANCE_STYLES: Record<AttendanceStatus, { bg: string; text: string; label: string }> = {

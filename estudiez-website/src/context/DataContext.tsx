@@ -65,6 +65,8 @@ import {
   rejectRegistrationApi,
   SUBJECT_ID_MAP,
   submitRegistrationApi,
+  saveMarkApi,
+  sendChatMessage,
   type ApiAssessment,
   type ApiAttendanceRecord,
   type ApiChatGroup,
@@ -117,6 +119,27 @@ interface DataContextValue {
     period: number,
     teacherEmail: string,
     records: { studentEmail: string; status: AttendanceStatus; note: string }[]
+  ) => Promise<void>
+  saveMarksAndEvaluationsBatch: (
+    examId: number,
+    classId: string,
+    subject: string,
+    teacherEmail: string,
+    records: {
+      studentEmail: string
+      score: number
+      evaluation?: {
+        performanceLevel: 'excellent' | 'good' | 'average' | 'below-average' | 'poor'
+        topicsMastered?: string
+        topicsToImprove?: string
+        studyHabits: 'consistent' | 'irregular' | 'needs-work'
+        teacherNotes?: string
+        strengths: string
+        weaknesses: string
+        suggestedPath: string
+        teacher: string
+      }
+    }[]
   ) => Promise<void>
   addResource: (resource: Omit<Resource, 'id'>) => void
   addRevisionClass: (revision: Omit<RevisionClass, 'id'>) => void
@@ -207,7 +230,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         apiUsers.forEach(u => {
           // Students may have email: null — use same formula as mapApiUsersToFrontend
           const email = u.email ?? `${u.username ?? u.userId}@estudiez.edu.vn`
-          if (email && u.userId) userIdByEmail.current.set(email, u.userId)
+          if (email && u.userId) userIdByEmail.current.set(email, u.userId.toLowerCase())
         })
 
         classBackendIdByFrontId.current.clear()
@@ -221,34 +244,35 @@ export function DataProvider({ children }: { children: ReactNode }) {
         // studentId UUID → frontend email (for mapping marks → ScoreDetail)
         const studentUserIdToEmail = new Map<string, string>()
         apiStudents.forEach(s => {
-          const user = apiUsers.find(u => u.userId === s.userId)
+          const user = apiUsers.find(u => u.userId?.toLowerCase() === s.userId?.toLowerCase())
           const email = user ? (user.email ?? `${user.username ?? user.userId}@estudiez.edu.vn`) : ''
           if (email && s.studentId) {
-            studentUserIdToEmail.set(s.studentId, email)
-            emailByStudentId.current.set(s.studentId, email)
-            studentIdByEmail.current.set(email, s.studentId)
+            const studentIdLower = s.studentId.toLowerCase()
+            studentUserIdToEmail.set(studentIdLower, email)
+            emailByStudentId.current.set(studentIdLower, email)
+            studentIdByEmail.current.set(email, studentIdLower)
           }
         })
 
         // Lookup maps for mappers that need user name / email by userId
         const nameByUserId = new Map<string, string>(
-          apiUsers.map(u => [u.userId!, u.fullName ?? u.username ?? '']),
+          apiUsers.map(u => [u.userId!.toLowerCase(), u.fullName ?? u.username ?? '']),
         )
         const emailByUserId = new Map<string, string>()
         apiUsers.forEach(u => {
           const email = u.email ?? `${u.username ?? u.userId}@estudiez.edu.vn`
-          if (u.userId) emailByUserId.set(u.userId, email)
+          if (u.userId) emailByUserId.set(u.userId.toLowerCase(), email)
         })
         // teacherId (Teacher PK) → fullName, needed for homeroomTeacher on SchoolClass
         const nameByTeacherId = new Map<string, string>()
         apiTeachers.forEach(t => {
-          const user = apiUsers.find(u => u.userId === t.userId)
+          const user = apiUsers.find(u => u.userId?.toLowerCase() === t.userId?.toLowerCase())
           const email = user ? (user.email ?? `${user.username ?? user.userId}@estudiez.edu.vn`) : ''
           if (email && t.teacherId) {
-            teacherIdByEmail.current.set(email, t.teacherId)
+            teacherIdByEmail.current.set(email, t.teacherId.toLowerCase())
           }
           if (t.teacherId && t.userId) {
-            nameByTeacherId.set(t.teacherId, nameByUserId.get(t.userId) ?? '')
+            nameByTeacherId.set(t.teacherId.toLowerCase(), nameByUserId.get(t.userId.toLowerCase()) ?? '')
           }
         })
 
@@ -256,21 +280,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
         // parentId (Parent PK) → userId, then userId → email
         const userIdByParentId = new Map<string, string>()
         apiParents.forEach(p => {
-          if (p.parentId && p.userId) userIdByParentId.set(p.parentId, p.userId)
+          if (p.parentId && p.userId) userIdByParentId.set(p.parentId.toLowerCase(), p.userId.toLowerCase())
         })
         // studentId (Student PK) → email (from earlier studentUserIdToEmail + apiStudents)
         const emailByStudentPk = new Map<string, string>()
         apiStudents.forEach(s => {
           if (s.studentId) {
-            const email = studentUserIdToEmail.get(s.studentId)
-            if (email) emailByStudentPk.set(s.studentId, email)
+            const email = studentUserIdToEmail.get(s.studentId.toLowerCase())
+            if (email) emailByStudentPk.set(s.studentId.toLowerCase(), email)
           }
         })
         // parentUserId → childEmail (first linked child)
         const childEmailByParentUserId = new Map<string, string>()
         apiParentLinks.forEach(link => {
-          const parentUserId = userIdByParentId.get(link.id.parentId)
-          const childEmail = emailByStudentPk.get(link.id.studentId)
+          const parentUserId = userIdByParentId.get(link.id.parentId.toLowerCase())
+          const childEmail = emailByStudentPk.get(link.id.studentId.toLowerCase())
           if (parentUserId && childEmail && !childEmailByParentUserId.has(parentUserId)) {
             childEmailByParentUserId.set(parentUserId, childEmail)
           }
@@ -280,24 +304,24 @@ export function DataProvider({ children }: { children: ReactNode }) {
         const classIdByStudentPk = new Map<string, number>()
         apiEnrollments.forEach(e => {
           if (e.studentId && e.classId && e.status === 'ACTIVE') {
-            classIdByStudentPk.set(e.studentId, e.classId)
+            classIdByStudentPk.set(e.studentId.toLowerCase(), e.classId)
           }
         })
 
         // Build userId → studentId (Student PK) for mapping classId
         const studentPkByUserId = new Map<string, string>()
         apiStudents.forEach(s => {
-          if (s.userId && s.studentId) studentPkByUserId.set(s.userId, s.studentId)
+          if (s.userId && s.studentId) studentPkByUserId.set(s.userId.toLowerCase(), s.studentId.toLowerCase())
         })
 
         // Map users and enrich parent users with childEmail, students with classId
         const mappedUsers = mapApiUsersToFrontend(apiUsers, apiStudents, apiTeachers).map(u => {
           if (u.role === 'parent' && u.userId) {
-            const childEmail = childEmailByParentUserId.get(u.userId)
+            const childEmail = childEmailByParentUserId.get(u.userId.toLowerCase())
             if (childEmail) return { ...u, childEmail }
           }
           if (u.role === 'student' && u.userId) {
-            const studentPk = studentPkByUserId.get(u.userId)
+            const studentPk = studentPkByUserId.get(u.userId.toLowerCase())
             if (studentPk) {
               const classId = classIdByStudentPk.get(studentPk)
               if (classId != null) return { ...u, classId: String(classId) }
@@ -352,6 +376,32 @@ export function DataProvider({ children }: { children: ReactNode }) {
           )
           if (!cancelled && apiScores.length > 0) setScores(apiScores)
 
+          // Load evaluations from the saved marks' remarks
+          const derivedEvaluations: TestEvaluation[] = []
+          ;(apiAssessments as ApiAssessment[]).forEach((a, i) => {
+            markBatches[i].forEach(m => {
+              if (m.remark && m.remark.startsWith('{')) {
+                try {
+                  const evalData = JSON.parse(m.remark)
+                  const studentEmail = m.studentId ? studentUserIdToEmail.get(m.studentId) : undefined
+                  if (studentEmail) {
+                    derivedEvaluations.push({
+                      id: m.studentMarkId ?? 0,
+                      studentEmail,
+                      subject: SUBJECT_ID_MAP[a.subjectId ?? 0] ?? String(a.subjectId),
+                      testId: String(m.assessmentId ?? ''),
+                      score: m.score ?? 0,
+                      ...evalData
+                    })
+                  }
+                } catch (e) {
+                  console.warn('Failed to parse evaluation JSON:', e)
+                }
+              }
+            })
+          })
+          if (!cancelled && derivedEvaluations.length > 0) setEvaluations(derivedEvaluations)
+
           // Derive student classId + grade from which assessment they have marks in
           if (!cancelled) {
             const classByBackendId = new Map(
@@ -378,7 +428,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
                   const classId = emailToClassId.get(u.email)
                   const grade = emailToGrade.get(u.email)
                   if (!classId && grade == null) return u
-                  return { ...u, classId: classId ?? u.classId, grade: grade ?? u.grade }
+                  return { ...u, classId: u.classId || classId, grade: u.grade || grade }
                 }),
               )
             }
@@ -415,7 +465,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
                 status: (a.status ?? 'present').toLowerCase() as AttendanceStatus,
                 teacher: nameByTeacherId.get(lesson.teacherId ?? '') ?? lesson.teacherId ?? '',
                 note: a.note ?? '',
-              }
+              } as AttendanceRecord
             })
             .filter((a): a is AttendanceRecord => a !== null)
 
@@ -436,6 +486,57 @@ export function DataProvider({ children }: { children: ReactNode }) {
       cancelled = true
     }
   }, [])
+
+  // Poll chat messages from backend every 4 seconds to sync messages automatically on Web client
+  useEffect(() => {
+    let cancelled = false
+    let timerId: any = null
+
+    async function poll() {
+      if (chatGroups.length === 0) return
+      try {
+        const msgBatches = await Promise.all(
+          chatGroups.map(g =>
+            getChatMessages(Number(g.id)).catch(() => [] as ApiChatMessage[]),
+          ),
+        )
+        if (cancelled) return
+
+        // Map names and emails
+        const nameByUserId = new Map<string, string>()
+        const emailByUserId = new Map<string, string>()
+        users.forEach(u => {
+          if (u.userId) {
+            nameByUserId.set(u.userId.toLowerCase(), u.fullName)
+            emailByUserId.set(u.userId.toLowerCase(), u.email)
+          }
+        })
+
+        const allMessages = chatGroups.flatMap((g, i) =>
+          msgBatches[i].map(m => mapApiChatMessage(m, nameByUserId, emailByUserId)),
+        )
+
+        setChatMessages(prev => {
+          if (prev.length !== allMessages.length) return allMessages
+          for (let idx = 0; idx < prev.length; idx++) {
+            if (prev[idx].id !== allMessages[idx].id || prev[idx].body !== allMessages[idx].body) {
+              return allMessages
+            }
+          }
+          return prev
+        })
+      } catch (e) {
+        console.warn('Failed to poll chat messages:', e)
+      }
+    }
+
+    timerId = setInterval(poll, 4000)
+
+    return () => {
+      cancelled = true
+      if (timerId) clearInterval(timerId)
+    }
+  }, [chatGroups, users])
 
   const addUser = useCallback((user: User) => setUsers((prev) => [...prev, user]), [])
   const updateUser = useCallback(
@@ -606,6 +707,108 @@ export function DataProvider({ children }: { children: ReactNode }) {
     },
     [users],
   )
+  const saveMarksAndEvaluationsBatch = useCallback(
+    async (
+      examId: number,
+      classId: string,
+      subject: string,
+      teacherEmail: string,
+      records: {
+        studentEmail: string
+        score: number
+        evaluation?: {
+          performanceLevel: 'excellent' | 'good' | 'average' | 'below-average' | 'poor'
+          topicsMastered?: string
+          topicsToImprove?: string
+          studyHabits: 'consistent' | 'irregular' | 'needs-work'
+          teacherNotes?: string
+          strengths: string
+          weaknesses: string
+          suggestedPath: string
+          teacher: string
+        }
+      }[]
+    ) => {
+      const teacherUuid = teacherIdByEmail.current.get(teacherEmail)
+      if (!teacherUuid) {
+        throw new Error('Teacher not found.')
+      }
+
+      const exam = exams.find((e) => e.id === examId)
+      const examName = exam?.name ?? 'Exam'
+      const examDate = exam?.date ?? new Date().toISOString().split('T')[0]
+
+      // Call API to save marks
+      const results = await Promise.all(
+        records.map(async (rec) => {
+          const studentUuid = studentIdByEmail.current.get(rec.studentEmail)
+          if (!studentUuid) {
+            console.warn(`Student UUID not found for email: ${rec.studentEmail}`)
+            return null
+          }
+
+          const apiMark: ApiMark = {
+            assessmentId: examId,
+            studentId: studentUuid,
+            score: rec.score,
+            remark: rec.evaluation ? JSON.stringify(rec.evaluation) : undefined,
+            gradedBy: teacherUuid,
+          }
+
+          const saved = await saveMarkApi(examId, apiMark)
+          return { rec, saved }
+        })
+      )
+
+      // Update local React state so it shows up immediately
+      setScores((prev) => {
+        let next = [...prev]
+        results.forEach((res) => {
+          if (!res) return
+          const { rec, saved } = res
+          // Remove if already exists in state
+          next = next.filter(
+            (s) => !(s.studentEmail === rec.studentEmail && s.testId === String(examId))
+          )
+          next.push({
+            id: saved.studentMarkId ?? nextId(prev),
+            studentEmail: rec.studentEmail,
+            classId,
+            subject,
+            testId: String(examId),
+            description: examName,
+            date: examDate,
+            scoreReceived: rec.score,
+          })
+        })
+        return next
+      })
+
+      setEvaluations((prev) => {
+        let next = [...prev]
+        results.forEach((res) => {
+          if (!res || !res.rec.evaluation) return
+          const { rec, saved } = res
+          // Remove if already exists in state
+          next = next.filter(
+            (e) => !(e.studentEmail === rec.studentEmail && e.testId === String(examId))
+          )
+          next.push({
+            id: saved.studentMarkId ?? nextId(prev),
+            studentEmail: rec.studentEmail,
+            subject,
+            testId: String(examId),
+            score: rec.score,
+            ...rec.evaluation,
+            strengths: rec.evaluation.strengths ?? '',
+            weaknesses: rec.evaluation.weaknesses ?? '',
+          })
+        })
+        return next
+      })
+    },
+    [exams],
+  )
   const addResource = useCallback(
     (resource: Omit<Resource, 'id'>) =>
       setResources((prev) => [...prev, { ...resource, id: nextId(prev) }]),
@@ -665,9 +868,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setChatMessages((prev) => prev.filter((m) => m.groupId !== id))
   }, [])
   const addChatMessage = useCallback(
-    (message: Omit<ChatMessage, 'id'>) =>
-      setChatMessages((prev) => [...prev, { ...message, id: nextId(prev) }]),
-    [],
+    (message: Omit<ChatMessage, 'id'>) => {
+      setChatMessages((prev) => [...prev, { ...message, id: nextId(prev) }])
+      // Find sender's userId from their email
+      const sender = users.find((u) => u.email === message.senderEmail)
+      const senderUserId = sender?.userId
+      if (senderUserId) {
+        sendChatMessage({
+          chatGroupId: Number(message.groupId),
+          senderUserId,
+          messageText: message.body,
+        }).catch(console.warn)
+      }
+    },
+    [users],
   )
   const addRegistrationRequest = useCallback(
     (request: Omit<RegistrationRequest, 'id' | 'status' | 'submittedAt'>) => {
@@ -760,6 +974,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       addProgress,
       addAttendance,
       saveAttendanceBatch,
+      saveMarksAndEvaluationsBatch,
       addResource,
       addRevisionClass,
       addEvaluation,
@@ -814,6 +1029,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       addProgress,
       addAttendance,
       saveAttendanceBatch,
+      saveMarksAndEvaluationsBatch,
       addResource,
       addRevisionClass,
       addEvaluation,

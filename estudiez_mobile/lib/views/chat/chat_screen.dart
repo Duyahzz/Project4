@@ -51,6 +51,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
     try {
       final list = await api.getChatMessages(widget.groupId);
+      list.sort((a, b) => a.id.compareTo(b.id)); // Sort chronologically (oldest first)
       if (mounted) {
         setState(() {
           _messages = list;

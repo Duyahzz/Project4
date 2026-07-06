@@ -17,11 +17,11 @@ const DAY_OFFSET: Record<DayOfWeek, number> = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, 
 
 /** Period number → start–end time label */
 const PERIOD_TIME: Record<number, string> = {
-  1: '07:00–07:45',
-  2: '07:50–08:35',
-  3: '08:40–09:25',
-  4: '09:35–10:20',
-  5: '10:25–11:10',
+  1: '07:30–08:15',
+  2: '08:25–09:10',
+  3: '09:20–10:05',
+  4: '10:15–11:00',
+  5: '11:10–11:55',
   6: '13:00–13:45',
   7: '13:50–14:35',
   8: '14:40–15:25',
@@ -312,14 +312,28 @@ function AttendanceTab({ subject, classIds, studentsByClass }: AttendanceTabProp
   const { timetable, attendance, saveAttendanceBatch, classes, semesters } = useData()
   const { currentUser } = useAuth()
   const { push } = useToast()
+  const todayStr = localDateStr(new Date())
 
-  // ── Semester selector ──────────────────────────────────────────────────────
-  const [selectedSemId, setSelectedSemId] = useState<string>(() => semesters[0]?.id ?? '')
+  const [selectedSemId, setSelectedSemId] = useState<string>(() => {
+    const todayStr = new Date().toISOString().slice(0, 10)
+    const currentSem = semesters.find((s) => todayStr >= s.startDate && todayStr <= s.endDate)
+    return currentSem?.id ?? semesters[0]?.id ?? ''
+  })
+
+  useEffect(() => {
+    if (semesters.length > 0 && !selectedSemId) {
+      const todayStr = new Date().toISOString().slice(0, 10)
+      const currentSem = semesters.find((s) => todayStr >= s.startDate && todayStr <= s.endDate)
+      setSelectedSemId(currentSem?.id ?? semesters[0]?.id ?? '')
+    }
+  }, [semesters, selectedSemId])
 
   const [weekStart, setWeekStart] = useState(() => getMonday(new Date()))
   const [activeSlot, setActiveSlot] = useState<TimetableSlot | null>(null)
   const [statuses, setStatuses] = useState<Record<string, AttendanceStatus>>({})
   const [notes, setNotes] = useState<Record<string, string>>({})
+  const [expandedNotes, setExpandedNotes] = useState<Set<string>>(() => new Set())
+  const isCurrentWeek = localDateStr(getMonday(new Date())) === localDateStr(weekStart)
 
   // When semester changes, jump weekStart to the semester's start date (or today if no date)
   useEffect(() => {
@@ -352,8 +366,12 @@ function AttendanceTab({ subject, classIds, studentsByClass }: AttendanceTabProp
 
   /** Quick lookup: `${day}-${period}` → slot */
   const slotIndex = useMemo(() => {
-    const map = new Map<string, TimetableSlot>()
-    for (const s of mySlots) map.set(`${s.day}-${s.period}`, s)
+    const map = new Map<string, TimetableSlot[]>()
+    for (const s of mySlots) {
+      const key = `${s.day}-${s.period}`
+      if (!map.has(key)) map.set(key, [])
+      map.get(key)!.push(s)
+    }
     return map
   }, [mySlots])
 
@@ -376,8 +394,23 @@ function AttendanceTab({ subject, classIds, studentsByClass }: AttendanceTabProp
 
   const openSlot = (slot: TimetableSlot) => {
     setActiveSlot(slot)
-    setStatuses({})
-    setNotes({})
+    setExpandedNotes(new Set())
+    const date = dateForDay(slot.day)
+    const records = attendance.filter(
+      (r) =>
+        r.classId === slot.classId &&
+        r.subject === subject &&
+        r.date === date &&
+        r.period === slot.period
+    )
+    const initialStatuses: Record<string, AttendanceStatus> = {}
+    const initialNotes: Record<string, string> = {}
+    for (const r of records) {
+      initialStatuses[r.studentEmail] = (r.status?.toLowerCase() as AttendanceStatus) || 'present'
+      initialNotes[r.studentEmail] = r.note || ''
+    }
+    setStatuses(initialStatuses)
+    setNotes(initialNotes)
   }
 
   const saveAttendance = async () => {
@@ -512,6 +545,18 @@ function AttendanceTab({ subject, classIds, studentsByClass }: AttendanceTabProp
         >
           →
         </button>
+        {!isCurrentWeek && (
+          <button
+            type="button"
+            onClick={() => {
+              setActiveSlot(null)
+              setWeekStart(getMonday(new Date()))
+            }}
+            className="text-xs text-indigo-600 hover:underline px-2 shrink-0 font-medium"
+          >
+            Today
+          </button>
+        )}
       </div>
 
       {/* Weekly timetable grid */}
@@ -525,10 +570,13 @@ function AttendanceTab({ subject, classIds, studentsByClass }: AttendanceTabProp
               {DAYS.map((day) => {
                 const dateStr = dateForDay(day)
                 const [, mm, dd] = dateStr.split('-')
+                const isToday = dateStr === todayStr
                 return (
                   <th
                     key={day}
-                    className="text-center px-2 py-1.5 font-bold text-slate-600 uppercase border-b border-slate-200"
+                    className={`text-center px-2 py-1.5 font-bold uppercase border-b border-slate-200 ${
+                      isToday ? 'bg-indigo-50/50 text-indigo-600 border-indigo-200' : 'text-slate-600'
+                    }`}
                   >
                     <div>{day}</div>
                     <div className="font-normal text-slate-400">{dd}/{mm}</div>
@@ -552,33 +600,39 @@ function AttendanceTab({ subject, classIds, studentsByClass }: AttendanceTabProp
                     <div className="text-slate-400">{PERIOD_TIME[period] ?? ''}</div>
                   </td>
                   {DAYS.map((day) => {
-                    const slot = slotIndex.get(`${day}-${period}`)
-                    if (!slot) {
-                      return <td key={day} className="px-1 py-2" />
+                    const slots = slotIndex.get(`${day}-${period}`) ?? []
+                    const isToday = dateForDay(day) === todayStr
+                    if (slots.length === 0) {
+                      return <td key={day} className={`px-1 py-2 ${isToday ? 'bg-indigo-50/10' : ''}`} />
                     }
-                    const taken = isAlreadyTaken(slot)
-                    const active = activeSlot?.id === slot.id
                     return (
-                      <td key={day} className="px-1 py-2 align-top">
-                        <button
-                          onClick={() => openSlot(slot)}
-                          className={`w-full text-left rounded-lg px-2 py-1.5 border transition-colors ${
-                            active
-                              ? 'border-indigo-500 bg-indigo-100 ring-1 ring-indigo-400'
-                              : taken
-                                ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
-                                : 'border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100'
-                          }`}
-                        >
-                          <div className="flex items-center gap-1">
-                            <span className="text-sm">{(SUBJECT_META[slot.subject] ?? DEFAULT_META).emoji}</span>
-                            <span className="font-semibold leading-tight text-xs">{classes.find(c => c.id === slot.classId)?.name ?? slot.classId}</span>
-                          </div>
-                          <div className="text-slate-400 text-[10px]">{slot.room}</div>
-                          {taken && (
-                            <div className="text-emerald-600 font-medium text-[10px] mt-0.5">✓ Done</div>
-                          )}
-                        </button>
+                      <td key={day} className={`px-1 py-2 align-top space-y-1.5 ${isToday ? 'bg-indigo-50/10' : ''}`}>
+                        {slots.map((slot) => {
+                          const taken = isAlreadyTaken(slot)
+                          const active = activeSlot?.id === slot.id
+                          return (
+                            <button
+                              key={slot.id}
+                              onClick={() => openSlot(slot)}
+                              className={`w-full text-left rounded-lg px-2 py-1.5 border transition-colors block ${
+                                active
+                                  ? 'border-indigo-500 bg-indigo-100 ring-1 ring-indigo-400'
+                                  : taken
+                                    ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+                                    : 'border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100'
+                              }`}
+                            >
+                              <div className="flex items-center gap-1">
+                                <span className="text-sm">{(SUBJECT_META[slot.subject] ?? DEFAULT_META).emoji}</span>
+                                <span className="font-semibold leading-tight text-xs">{classes.find(c => c.id === slot.classId)?.name ?? slot.classId}</span>
+                              </div>
+                              <div className="text-slate-400 text-[10px]">{slot.room}</div>
+                              {taken && (
+                                <div className="text-emerald-600 font-medium text-[10px] mt-0.5">✓ Done</div>
+                              )}
+                            </button>
+                          )
+                        })}
                       </td>
                     )
                   })}
@@ -633,7 +687,31 @@ function AttendanceTab({ subject, classIds, studentsByClass }: AttendanceTabProp
                       className="flex flex-col gap-2 border border-slate-200 rounded-lg px-3 py-2 bg-slate-50/50"
                     >
                       <div className="flex items-center justify-between gap-3">
-                        <span className="font-medium text-slate-800 text-sm">{student.fullName}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-slate-800 text-sm">{student.fullName}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setExpandedNotes((prev) => {
+                                const next = new Set(prev)
+                                if (next.has(student.email)) {
+                                  next.delete(student.email)
+                                } else {
+                                  next.add(student.email)
+                                }
+                                return next
+                              })
+                            }}
+                            className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded transition-all duration-200 border ${
+                              notes[student.email] || expandedNotes.has(student.email)
+                                ? 'bg-amber-50 text-amber-700 border-amber-200 font-medium'
+                                : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100 border-transparent'
+                            }`}
+                            title="Add/edit note"
+                          >
+                            📝 Note
+                          </button>
+                        </div>
                         <select
                           value={statuses[student.email] ?? 'present'}
                           onChange={(e) =>
@@ -651,18 +729,21 @@ function AttendanceTab({ subject, classIds, studentsByClass }: AttendanceTabProp
                           ))}
                         </select>
                       </div>
-                      <input
-                        type="text"
-                        placeholder="Add note for student (e.g. late, no homework...)"
-                        value={notes[student.email] ?? ''}
-                        onChange={(e) =>
-                          setNotes((prev) => ({
-                            ...prev,
-                            [student.email]: e.target.value,
-                          }))
-                        }
-                        className="rounded-md border border-slate-300 px-3 py-1.5 text-xs bg-white focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 w-full"
-                      />
+                      {(expandedNotes.has(student.email) || !!notes[student.email]) && (
+                        <input
+                          type="text"
+                          placeholder="Add note for student (e.g. late, no homework...)"
+                          value={notes[student.email] ?? ''}
+                          onChange={(e) =>
+                            setNotes((prev) => ({
+                              ...prev,
+                              [student.email]: e.target.value,
+                            }))
+                          }
+                          className="rounded-md border border-slate-300 px-3 py-1.5 text-xs bg-white focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 w-full mt-0.5"
+                          autoFocus
+                        />
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -763,11 +844,23 @@ function MarksEvalTab({
   classIds: string[]
   studentsByClass: Map<string, User[]>
 }) {
-  const { semesters, exams, addScore, addEvaluation, classes } = useData()
+  const { semesters, exams, scores, evaluations, saveMarksAndEvaluationsBatch, classes } = useData()
   const { currentUser } = useAuth()
   const { push } = useToast()
 
-  const [semesterId, setSemesterId] = useState(semesters[0]?.id ?? '')
+  const [semesterId, setSemesterId] = useState<string>(() => {
+    const todayStr = new Date().toISOString().slice(0, 10)
+    const currentSem = semesters.find((s) => todayStr >= s.startDate && todayStr <= s.endDate)
+    return currentSem?.id ?? semesters[0]?.id ?? ''
+  })
+
+  useEffect(() => {
+    if (semesters.length > 0 && !semesterId) {
+      const todayStr = new Date().toISOString().slice(0, 10)
+      const currentSem = semesters.find((s) => todayStr >= s.startDate && todayStr <= s.endDate)
+      setSemesterId(currentSem?.id ?? semesters[0]?.id ?? '')
+    }
+  }, [semesters, semesterId])
   const [classId, setClassId] = useState(classIds[0] ?? '')
   const [examId, setExamId] = useState<number | ''>('')
   const [entries, setEntries] = useState<Record<string, StudentEntry>>({})
@@ -775,8 +868,8 @@ function MarksEvalTab({
   const [expandedEmail, setExpandedEmail] = useState<string | null>(null)
 
   const availableExams = useMemo(
-    () => exams.filter((e) => e.semesterId === semesterId && e.subject === subject),
-    [exams, semesterId, subject],
+    () => exams.filter((e) => e.semesterId === semesterId && e.subject === subject && e.classId === classId),
+    [exams, semesterId, subject, classId],
   )
   const selectedExam = availableExams.find((e) => e.id === examId)
   const students = studentsByClass.get(classId) ?? []
@@ -791,6 +884,39 @@ function MarksEvalTab({
       setExamId('')
     }
   }, [semesterId, classId, availableExams, examId])
+
+  // Load existing marks and evaluations into entries state when examId or students change
+  useEffect(() => {
+    if (!examId) {
+      setEntries({})
+      return
+    }
+    const initialEntries: Record<string, StudentEntry> = {}
+    for (const student of students) {
+      // Find existing score
+      const existingScore = scores.find(
+        (s) => s.studentEmail === student.email && s.testId === String(examId)
+      )
+      // Find existing evaluation
+      const existingEval = evaluations.find(
+        (e) => e.studentEmail === student.email && e.testId === String(examId)
+      )
+
+      if (existingScore || existingEval) {
+        initialEntries[student.email] = {
+          score: existingScore ? String(existingScore.scoreReceived) : '',
+          performanceLevel: existingEval?.performanceLevel ?? 'average',
+          topicsMastered: existingEval?.topicsMastered ?? '',
+          topicsToImprove: existingEval?.topicsToImprove ?? '',
+          strengths: existingEval?.strengths ?? '',
+          weaknesses: existingEval?.weaknesses ?? '',
+          studyHabits: existingEval?.studyHabits ?? 'consistent',
+          teacherNotes: existingEval?.teacherNotes ?? '',
+        }
+      }
+    }
+    setEntries(initialEntries)
+  }, [examId, students, scores, evaluations])
 
   const getEntry = (email: string): StudentEntry => entries[email] ?? ENTRY_INITIAL
 
@@ -809,53 +935,59 @@ function MarksEvalTab({
   const saveAll = () => {
     if (!examId) { push('error', 'Select an exam first.'); return }
     const next: Record<string, string> = {}
+    const recordsToSave: any[] = []
+
     for (const s of students) {
       const raw = getEntry(s.email).score
-      if (raw === '') { next[s.email] = 'Required'; continue }
-      const n = Number(raw)
-      if (Number.isNaN(n) || n < 0 || n > 10) next[s.email] = '0–10'
-    }
-    setScoreErrors(next)
-    if (Object.keys(next).length > 0) return
+      if (raw === '') continue // Skip ungraded students
 
-    let evalCount = 0
-    students.forEach((student) => {
-      const entry = getEntry(student.email)
-      addScore({
-        studentEmail: student.email,
-        classId,
-        subject,
-        testId: String(examId),
-        description: selectedExam?.name ?? '',
-        date: selectedExam?.date ?? localDateStr(new Date()),
-        scoreReceived: Number(entry.score),
-      })
-      if (entry.strengths.trim() && entry.weaknesses.trim()) {
-        evalCount++
-        addEvaluation({
-          studentEmail: student.email,
-          subject,
-          testId: String(examId),
-          score: Number(entry.score),
-          performanceLevel: entry.performanceLevel as 'excellent' | 'good' | 'average' | 'below-average' | 'poor',
-          topicsMastered: entry.topicsMastered.trim() || undefined,
-          topicsToImprove: entry.topicsToImprove.trim() || undefined,
-          studyHabits: entry.studyHabits as 'consistent' | 'irregular' | 'needs-work',
-          teacherNotes: entry.teacherNotes.trim() || undefined,
-          strengths: entry.strengths.trim(),
-          weaknesses: entry.weaknesses.trim(),
-          suggestedPath: buildAIPath(entry, selectedExam?.name ?? ''),
-          teacher: currentUser?.fullName ?? 'Teacher',
+      const n = Number(raw)
+      if (Number.isNaN(n) || n < 0 || n > 10) {
+        next[s.email] = '0–10'
+      } else {
+        const entry = getEntry(s.email)
+        const hasEvaluation = entry.strengths.trim() && entry.weaknesses.trim()
+        recordsToSave.push({
+          studentEmail: s.email,
+          score: n,
+          evaluation: hasEvaluation
+            ? {
+                performanceLevel: entry.performanceLevel as any,
+                topicsMastered: entry.topicsMastered.trim() || undefined,
+                topicsToImprove: entry.topicsToImprove.trim() || undefined,
+                studyHabits: entry.studyHabits as any,
+                teacherNotes: entry.teacherNotes.trim() || undefined,
+                strengths: entry.strengths.trim(),
+                weaknesses: entry.weaknesses.trim(),
+                suggestedPath: buildAIPath(entry, selectedExam?.name ?? ''),
+                teacher: currentUser?.fullName ?? 'Teacher',
+              }
+            : undefined,
         })
       }
-    })
-    resetEntries()
-    push(
-      'success',
-      evalCount > 0
-        ? `Marks + ${evalCount} evaluation(s) saved for ${students.length} students.`
-        : `Marks saved for ${students.length} students.`,
-    )
+    }
+
+    setScoreErrors(next)
+    if (Object.keys(next).length > 0) return
+    if (recordsToSave.length === 0) {
+      push('error', 'No scores entered to save.')
+      return
+    }
+
+    saveMarksAndEvaluationsBatch(Number(examId), classId, subject, currentUser?.email ?? '', recordsToSave)
+      .then(() => {
+        resetEntries()
+        const evalCount = recordsToSave.filter((r) => r.evaluation).length
+        push(
+          'success',
+          evalCount > 0
+            ? `Marks + ${evalCount} evaluation(s) saved for ${recordsToSave.length} students.`
+            : `Marks saved for ${recordsToSave.length} students.`,
+        )
+      })
+      .catch((err) => {
+        push('error', err instanceof Error ? err.message : 'Failed to save marks.')
+      })
   }
 
   return (
@@ -967,7 +1099,7 @@ function MarksEvalTab({
           ) : (
             <Card
               title={`Class Roster — ${classes.find(c => c.id === classId)?.name ?? classId}`}
-              description={`Grading: ${selectedExam?.name} (Weight: ${selectedExam ? selectedExam.weight * 100 : 0}%)`}
+              description={`Grading: ${selectedExam?.name} (Weight: ${selectedExam && selectedExam.weight != null ? selectedExam.weight * 100 : 10}%)`}
             >
               <div className="flex justify-between items-center pb-2 border-b border-slate-100 mb-3">
                 <span className="text-xs text-slate-400 font-medium">
