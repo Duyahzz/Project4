@@ -8,6 +8,7 @@ import com.estudiez.backend.repository.StudentMarkRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -53,5 +54,16 @@ public class AssessmentService {
         return studentMarkRepo.findByStudentId(studentId);
     }
 
-    public StudentMark saveMark(StudentMark mark) { return studentMarkRepo.save(mark); }
+    public StudentMark saveMark(StudentMark mark) {
+        Optional<StudentMark> existing = studentMarkRepo.findByAssessmentIdAndStudentId(mark.getAssessmentId(), mark.getStudentId());
+        if (existing.isPresent()) {
+            StudentMark em = existing.get();
+            em.setScore(mark.getScore());
+            em.setTeacherComment(mark.getTeacherComment());
+            em.setRemark(mark.getRemark());
+            em.setGradedBy(mark.getGradedBy());
+            return studentMarkRepo.save(em);
+        }
+        return studentMarkRepo.save(mark);
+    }
 }

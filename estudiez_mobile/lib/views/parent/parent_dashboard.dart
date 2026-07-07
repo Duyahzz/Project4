@@ -4,6 +4,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/language_provider.dart';
 import '../../models.dart';
 import '../student/student_dashboard.dart';
+import '../chat/chat_screen.dart';
 import '../profile/profile_screen.dart';
 
 class ParentDashboard extends StatefulWidget {
@@ -16,6 +17,7 @@ class ParentDashboard extends StatefulWidget {
 class _ParentDashboardState extends State<ParentDashboard> {
   bool _isLoading = true;
   List<Map<String, dynamic>> _children = [];
+  List<ChatGroup> _chatGroups = [];
 
   @override
   void initState() {
@@ -42,6 +44,7 @@ class _ParentDashboardState extends State<ParentDashboard> {
       if (parentId.isEmpty) {
         setState(() {
           _children = [];
+          _chatGroups = [];
           _isLoading = false;
         });
         return;
@@ -53,6 +56,10 @@ class _ParentDashboardState extends State<ParentDashboard> {
 
       // 3. Get students details to match studentIds
       final studentsRes = await api.getStudents();
+      
+      // Get enrollments to find classId for each child
+      final enrollments = await api.getEnrollments();
+      final Set<int> childClassIds = {};
 
       final List<Map<String, dynamic>> childList = [];
       for (var link in childLinks) {
@@ -61,6 +68,17 @@ class _ParentDashboardState extends State<ParentDashboard> {
           (s) => s.studentId == studentId,
           orElse: () => ApiStudent(studentId: studentId),
         );
+
+        int? resolvedClassId;
+        for (var e in enrollments) {
+          if (e['studentId']?.toString() == studentId && e['status'] == 'ACTIVE') {
+            resolvedClassId = e['classId'] as int?;
+            if (resolvedClassId != null) {
+              childClassIds.add(resolvedClassId);
+            }
+            break;
+          }
+        }
 
         final String uId = studentObj.userId ?? '';
         final String fullName = api.userNamesMap[uId] ?? 'Student $studentId';
@@ -71,11 +89,20 @@ class _ParentDashboardState extends State<ParentDashboard> {
           'fullName': fullName,
           'studentCode': studentCode,
           'relationship': link.relationship ?? 'Child',
+          'classId': resolvedClassId,
         });
       }
 
+      // Fetch all chat groups and filter parent-teacher groups matching child classIds
+      final allChats = await api.getChatGroups();
+      final filteredChats = allChats.where((g) => 
+        g.type == 'parent-teacher' && 
+        childClassIds.contains(int.tryParse(g.classId) ?? -1)
+      ).toList();
+
       setState(() {
         _children = childList;
+        _chatGroups = filteredChats;
         _isLoading = false;
       });
     } catch (e) {
@@ -120,7 +147,7 @@ class _ParentDashboardState extends State<ParentDashboard> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : Padding(
+          : SingleChildScrollView(
               padding: const EdgeInsets.all(16.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -187,35 +214,83 @@ class _ParentDashboardState extends State<ParentDashboard> {
                             ),
                           ),
                         )
-                      : Expanded(
-                          child: ListView.builder(
-                            itemCount: _children.length,
-                            itemBuilder: (context, idx) {
-                              final child = _children[idx];
-                              return Card(
-                                child: ListTile(
-                                  leading: const CircleAvatar(
-                                    backgroundColor: Color(0x1F0A2540),
-                                    child: Icon(Icons.face, color: Color(0xFF0A2540)),
-                                  ),
-                                  title: Text(child['fullName'], style: const TextStyle(fontWeight: FontWeight.bold)),
-                                  subtitle: Text('${lang.t('roll_no')}: ${child['studentCode']} • ${lang.t('relationship')}: ${child['relationship']}'),
-                                  trailing: const Icon(Icons.arrow_forward),
-                                  onTap: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (context) => ChildMonitorScreen(
-                                          studentId: child['studentId'],
-                                          fullName: child['fullName'],
-                                        ),
-                                      ),
-                                    );
-                                  },
+                      : ListView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: _children.length,
+                          itemBuilder: (context, idx) {
+                            final child = _children[idx];
+                            return Card(
+                              child: ListTile(
+                                leading: const CircleAvatar(
+                                  backgroundColor: Color(0x1F0A2540),
+                                  child: Icon(Icons.face, color: Color(0xFF0A2540)),
                                 ),
-                              );
-                            },
+                                title: Text(child['fullName'], style: const TextStyle(fontWeight: FontWeight.bold)),
+                                subtitle: Text('${lang.t('roll_no')}: ${child['studentCode']} • ${lang.t('relationship')}: ${child['relationship']}'),
+                                trailing: const Icon(Icons.arrow_forward),
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => ChildMonitorScreen(
+                                        studentId: child['studentId'],
+                                        fullName: child['fullName'],
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            );
+                          },
+                        ),
+                  const SizedBox(height: 24),
+                  Text(
+                    lang.t('my_chat_groups'),
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0A2540)),
+                  ),
+                  const SizedBox(height: 8),
+                  _chatGroups.isEmpty
+                      ? Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(16.0),
+                            child: Center(
+                              child: Text(
+                                lang.t('no_chat'),
+                                style: const TextStyle(color: Colors.grey),
+                              ),
+                            ),
                           ),
+                        )
+                      : ListView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: _chatGroups.length,
+                          itemBuilder: (context, idx) {
+                            final group = _chatGroups[idx];
+                            return Card(
+                              child: ListTile(
+                                leading: const CircleAvatar(
+                                  backgroundColor: Color(0xFFED7D31),
+                                  child: Icon(Icons.chat_bubble_outline, color: Colors.white),
+                                ),
+                                title: Text(group.name),
+                                subtitle: Text('Type: ${group.type.toUpperCase()}'),
+                                trailing: const Icon(Icons.chevron_right),
+                                onTap: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => ChatScreen(
+                                        groupId: int.parse(group.id),
+                                        groupName: group.name,
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            );
+                          },
                         ),
                 ],
               ),
@@ -239,6 +314,10 @@ class _ChildMonitorScreenState extends State<ChildMonitorScreen> {
   List<TimetableSlot> _timetable = [];
   List<ScoreDetail> _marks = [];
   List<AttendanceRecord> _attendance = [];
+  List<LessonSession> _lessons = [];
+
+  int _selectedSemester = 1;
+  int _selectedTimetableSemester = 1;
 
   @override
   void initState() {
@@ -251,16 +330,31 @@ class _ChildMonitorScreenState extends State<ChildMonitorScreen> {
     setState(() => _isLoading = true);
 
     try {
+      int? resolvedClassId;
+      try {
+        final enrollments = await api.getEnrollments();
+        for (var e in enrollments) {
+          if (e['studentId']?.toString() == widget.studentId && e['status'] == 'ACTIVE') {
+            resolvedClassId = e['classId'] as int?;
+            break;
+          }
+        }
+      } catch (e) {
+        debugPrint('Error resolving child classId: $e');
+      }
+
       final results = await Future.wait([
-        api.getTimetable(null),
+        api.getTimetable(resolvedClassId),
         api.getStudentMarks(widget.studentId),
         api.getAttendanceForStudent(widget.studentId),
+        api.getLessons(resolvedClassId ?? 0),
       ]);
 
       setState(() {
         _timetable = results[0] as List<TimetableSlot>;
         _marks = results[1] as List<ScoreDetail>;
         _attendance = results[2] as List<AttendanceRecord>;
+        _lessons = results[3] as List<LessonSession>;
         _isLoading = false;
       });
     } catch (e) {
@@ -303,11 +397,64 @@ class _ChildMonitorScreenState extends State<ChildMonitorScreen> {
     );
   }
 
+  List<String> _getTimetableDates() {
+    final startS1 = DateTime(2025, 12, 1);
+    final endS1 = DateTime(2026, 5, 1);
+    final startS2 = DateTime(2026, 6, 1);
+    final endS2 = DateTime(2026, 11, 6);
+
+    DateTime baseDate;
+    final now = DateTime.now();
+
+    if (_selectedTimetableSemester == 1) {
+      if (now.isAfter(startS1) && now.isBefore(endS1)) {
+        baseDate = now;
+      } else {
+        baseDate = startS1;
+      }
+    } else {
+      if (now.isAfter(startS2) && now.isBefore(endS2)) {
+        baseDate = now;
+      } else {
+        baseDate = startS2;
+      }
+    }
+
+    final weekday = baseDate.weekday;
+    final monday = baseDate.subtract(Duration(days: weekday - 1));
+
+    final list = <String>[];
+    for (int i = 0; i < 6; i++) {
+      final date = monday.add(Duration(days: i));
+      final dayStr = date.day.toString().padLeft(2, '0');
+      final monthStr = date.month.toString().padLeft(2, '0');
+      list.add('$dayStr/$monthStr');
+    }
+    return list;
+  }
+
+  Widget _buildTabLabel(String day, String date) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(day, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+          const SizedBox(height: 2),
+          Text(date, style: const TextStyle(fontSize: 10)),
+        ],
+      ),
+    );
+  }
+
   Widget _buildTimetableTab(LanguageProvider lang) {
+    final semesterString = _selectedTimetableSemester == 1 ? 'S1-2025' : 'S2-2025';
+    final filteredSlots = _timetable.where((s) => s.semesterId == semesterString).toList();
+
     final Map<String, List<TimetableSlot>> daySlots = {
       'Mon': [], 'Tue': [], 'Wed': [], 'Thu': [], 'Fri': [], 'Sat': []
     };
-    for (var slot in _timetable) {
+    for (var slot in filteredSlots) {
       daySlots[slot.day]?.add(slot);
     }
     for (var key in daySlots.keys) {
@@ -318,146 +465,450 @@ class _ChildMonitorScreenState extends State<ChildMonitorScreen> {
         ? {'Mon': 'T.2', 'Tue': 'T.3', 'Wed': 'T.4', 'Thu': 'T.5', 'Fri': 'T.6', 'Sat': 'T.7'}
         : {'Mon': 'Mon', 'Tue': 'Tue', 'Wed': 'Wed', 'Thu': 'Thu', 'Fri': 'Fri', 'Sat': 'Sat'};
 
-    return DefaultTabController(
-      length: 6,
-      child: Scaffold(
-        appBar: TabBar(
-          isScrollable: true,
-          labelColor: const Color(0xFFED7D31),
-          unselectedLabelColor: Colors.grey,
-          indicatorColor: const Color(0xFFED7D31),
-          tabs: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-              .map((d) => Tab(text: dayLabels[d] ?? d))
-              .toList(),
+    final dates = _getTimetableDates();
+    final today = DateTime.now().weekday; // Mon=1, ..., Sun=7
+    final initialIndex = (today >= 1 && today <= 6) ? (today - 1) : 0;
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(12.0),
+          child: _buildTimetableSemesterSelector(lang),
         ),
-        body: TabBarView(
-          children: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) {
-            final slots = daySlots[day] ?? [];
-            if (slots.isEmpty) {
-              return Center(child: Text(lang.t('no_classes_today')));
-            }
-            return ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: slots.length,
-              itemBuilder: (context, idx) {
-                final slot = slots[idx];
-                return Card(
-                  margin: const EdgeInsets.symmetric(vertical: 8),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Row(
-                      children: [
-                        CircleAvatar(
-                          backgroundColor: const Color(0xFF0A2540),
-                          radius: 22,
-                          child: Text(
-                            '${slot.period}',
-                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+        Expanded(
+          child: DefaultTabController(
+            length: 6,
+            initialIndex: initialIndex,
+            child: Scaffold(
+              appBar: TabBar(
+                isScrollable: true,
+                labelColor: const Color(0xFFED7D31),
+                unselectedLabelColor: Colors.grey,
+                indicatorColor: const Color(0xFFED7D31),
+                tabs: [
+                  Tab(child: _buildTabLabel(dayLabels['Mon'] ?? 'Mon', dates[0])),
+                  Tab(child: _buildTabLabel(dayLabels['Tue'] ?? 'Tue', dates[1])),
+                  Tab(child: _buildTabLabel(dayLabels['Wed'] ?? 'Wed', dates[2])),
+                  Tab(child: _buildTabLabel(dayLabels['Thu'] ?? 'Thu', dates[3])),
+                  Tab(child: _buildTabLabel(dayLabels['Fri'] ?? 'Fri', dates[4])),
+                  Tab(child: _buildTabLabel(dayLabels['Sat'] ?? 'Sat', dates[5])),
+                ],
+              ),
+              body: TabBarView(
+                children: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) {
+                  final slots = daySlots[day] ?? [];
+                  if (slots.isEmpty) {
+                    return Center(child: Text(lang.t('no_classes_today')));
+                  }
+                  return ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: slots.length,
+                    itemBuilder: (context, idx) {
+                      final slot = slots[idx];
+                      return Card(
+                        margin: const EdgeInsets.symmetric(vertical: 8),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Row(
                             children: [
-                              Text(slot.subject, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                              const SizedBox(height: 4),
-                              Text('${lang.t('teacher_key')}: ${slot.teacher}', style: const TextStyle(fontSize: 13, color: Colors.grey)),
-                              const SizedBox(height: 4),
-                              Row(
-                                children: [
-                                  const Icon(Icons.access_time, size: 14, color: Colors.grey),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    '${slot.startTime} - ${slot.endTime}',
-                                    style: const TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.w500),
-                                  ),
-                                ],
+                              CircleAvatar(
+                                backgroundColor: const Color(0xFF0A2540),
+                                radius: 22,
+                                child: Text(
+                                  '${slot.period}',
+                                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(slot.subject, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                                    const SizedBox(height: 4),
+                                    Text('${lang.t('teacher_key')}: ${slot.teacher}', style: const TextStyle(fontSize: 13, color: Colors.grey)),
+                                    const SizedBox(height: 4),
+                                    Row(
+                                      children: [
+                                        const Icon(Icons.access_time, size: 14, color: Colors.grey),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          '${slot.startTime} - ${slot.endTime}',
+                                          style: const TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.w500),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFED7D31).withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  'Room ${slot.room}',
+                                  style: const TextStyle(color: Color(0xFFED7D31), fontSize: 12, fontWeight: FontWeight.bold),
+                                ),
                               ),
                             ],
                           ),
                         ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFED7D31).withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            'Room ${slot.room}',
-                            style: const TextStyle(color: Color(0xFFED7D31), fontSize: 12, fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            );
-          }).toList(),
+                      );
+                    },
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
         ),
-      ),
+      ],
     );
   }
 
   Widget _buildMarksTab(LanguageProvider lang) {
-    if (_marks.isEmpty) {
-      return Center(child: Text(lang.t('no_marks_child')));
-    }
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: _marks.length,
-      itemBuilder: (context, idx) {
-        final mark = _marks[idx];
-        final score = mark.scoreReceived;
-        final color = score >= 8.0 ? Colors.green : score >= 5.0 ? Colors.orange : Colors.red;
+    final filtered = _marks.where((m) => m.semesterId == _selectedSemester).toList();
 
-        return Card(
-          child: ListTile(
-            leading: CircleAvatar(
-              backgroundColor: color.withOpacity(0.1),
-              child: Text(score.toStringAsFixed(1), style: TextStyle(color: color, fontWeight: FontWeight.bold)),
-            ),
-            title: Text(mark.subject, style: const TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: Text('${mark.description}\n${lang.t('date_label')}: ${mark.date.substring(0, 10)}'),
-            isThreeLine: true,
-          ),
-        );
-      },
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: _buildSemesterSelector(lang),
+        ),
+        Expanded(
+          child: filtered.isEmpty
+              ? Center(child: Text(lang.t('no_marks_child')))
+              : ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: filtered.length,
+                  itemBuilder: (context, idx) {
+                    final mark = filtered[idx];
+                    final score = mark.scoreReceived;
+                    final color = score >= 8.0 ? Colors.green : score >= 5.0 ? Colors.orange : Colors.red;
+
+                    return Card(
+                      child: ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: color.withOpacity(0.1),
+                          child: Text(score.toStringAsFixed(1), style: TextStyle(color: color, fontWeight: FontWeight.bold)),
+                        ),
+                        title: Text(mark.subject, style: const TextStyle(fontWeight: FontWeight.bold)),
+                        subtitle: Text('${mark.description}\n${lang.t('date_label')}: ${mark.date.substring(0, 10)}'),
+                        isThreeLine: true,
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
     );
   }
 
   Widget _buildAttendanceTab(LanguageProvider lang) {
-    if (_attendance.isEmpty) {
-      return Center(child: Text(lang.t('no_attendance_child')));
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+    final api = auth.apiService;
+
+    final filtered = _attendance.where((a) {
+      LessonSession? lesson;
+      for (var l in _lessons) {
+        if (l.lessonSessionId == a.lessonSessionId) {
+          lesson = l;
+          break;
+        }
+      }
+      if (lesson == null) return false;
+      int sem = 1;
+      try {
+        final date = DateTime.parse(lesson.sessionDate.substring(0, 10));
+        if (date.isAfter(DateTime(2026, 1, 15))) {
+          sem = 2;
+        }
+      } catch (_) {}
+      return sem == _selectedSemester;
+    }).toList();
+
+    // Group records by subject
+    final Map<String, List<AttendanceRecord>> grouped = {};
+    for (var record in filtered) {
+      LessonSession? lesson;
+      for (var l in _lessons) {
+        if (l.lessonSessionId == record.lessonSessionId) {
+          lesson = l;
+          break;
+        }
+      }
+      final subjectName = lesson != null 
+          ? (api.subjectMap[lesson.subjectId] ?? 'Subject ${lesson.subjectId}') 
+          : 'Lesson';
+      if (!grouped.containsKey(subjectName)) {
+        grouped[subjectName] = [];
+      }
+      grouped[subjectName]!.add(record);
     }
 
-    final statusLabels = {
-      'PRESENT': lang.t('present'),
-      'ABSENT': lang.t('absent'),
-      'LATE': lang.t('late'),
-      'EXCUSED': lang.t('excused'),
-    };
+    final sortedSubjects = grouped.keys.toList()..sort();
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: _attendance.length,
-      itemBuilder: (context, idx) {
-        final r = _attendance[idx];
-        Color color = Colors.grey;
-        if (r.status == 'PRESENT') color = Colors.green;
-        else if (r.status == 'ABSENT') color = Colors.red;
-        else if (r.status == 'LATE') color = Colors.orange;
-        else if (r.status == 'EXCUSED') color = Colors.blue;
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: _buildSemesterSelector(lang),
+        ),
+        Expanded(
+          child: filtered.isEmpty
+              ? Center(child: Text(lang.t('no_attendance_child')))
+              : ListView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  itemCount: sortedSubjects.length,
+                  itemBuilder: (context, idx) {
+                    final subjectName = sortedSubjects[idx];
+                    final records = grouped[subjectName] ?? [];
 
-        return Card(
-          child: ListTile(
-            leading: Icon(Icons.check_circle_outline, color: color),
-            title: Text(statusLabels[r.status] ?? r.status, style: TextStyle(fontWeight: FontWeight.bold, color: color)),
-            subtitle: Text('Session ID: ${r.lessonSessionId}${r.note != null ? '\n${r.note}' : ''}'),
+                    // Calculate stats
+                    int present = 0;
+                    int absent = 0;
+                    int lateCount = 0;
+                    int excused = 0;
+                    for (var r in records) {
+                      if (r.status == 'PRESENT') present++;
+                      else if (r.status == 'ABSENT') absent++;
+                      else if (r.status == 'LATE') lateCount++;
+                      else if (r.status == 'EXCUSED') excused++;
+                    }
+
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      clipBehavior: Clip.antiAlias,
+                      child: Theme(
+                        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                        child: ExpansionTile(
+                          leading: const CircleAvatar(
+                            backgroundColor: Color(0x1F0A2540),
+                            child: Icon(Icons.class_, color: Color(0xFF0A2540)),
+                          ),
+                          title: Text(
+                            subjectName,
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF0A2540)),
+                          ),
+                          subtitle: Padding(
+                            padding: const EdgeInsets.only(top: 4.0),
+                            child: Wrap(
+                              spacing: 8,
+                              runSpacing: 4,
+                              children: [
+                                _buildStatChip('P: $present', Colors.green),
+                                _buildStatChip('A: $absent', Colors.red),
+                                _buildStatChip('L: $lateCount', Colors.orange),
+                                if (excused > 0) _buildStatChip('E: $excused', Colors.blue),
+                              ],
+                            ),
+                          ),
+                          children: records.map((record) {
+                            final status = record.status;
+                            Color statusColor = Colors.grey;
+                            IconData statusIcon = Icons.help_outline;
+                            if (status == 'PRESENT') { statusColor = Colors.green; statusIcon = Icons.check_circle_outline; }
+                            else if (status == 'ABSENT') { statusColor = Colors.red; statusIcon = Icons.cancel_outlined; }
+                            else if (status == 'LATE') { statusColor = Colors.orange; statusIcon = Icons.watch_later_outlined; }
+                            else if (status == 'EXCUSED') { statusColor = Colors.blue; statusIcon = Icons.info_outline; }
+
+                            LessonSession? lesson;
+                            for (var l in _lessons) {
+                              if (l.lessonSessionId == record.lessonSessionId) {
+                                lesson = l;
+                                break;
+                              }
+                            }
+
+                            String dateStr = 'N/A';
+                            String periodAndRoom = 'Period: N/A';
+                            if (lesson != null) {
+                              dateStr = lesson.sessionDate.length >= 10 
+                                  ? lesson.sessionDate.substring(0, 10) 
+                                  : lesson.sessionDate;
+
+                              String timeString = '';
+                              for (var slot in _timetable) {
+                                if (slot.period == lesson.periodNo && slot.startTime.isNotEmpty && slot.endTime.isNotEmpty) {
+                                  timeString = ' (${slot.startTime} - ${slot.endTime})';
+                                  break;
+                                }
+                              }
+                              periodAndRoom = 'Period ${lesson.periodNo}$timeString${lesson.room != null ? ' - Room ${lesson.room}' : ''}';
+                            }
+
+                            return Container(
+                              decoration: BoxDecoration(
+                                border: Border(top: BorderSide(color: Colors.grey.withOpacity(0.15))),
+                              ),
+                              child: ListTile(
+                                dense: true,
+                                leading: Icon(statusIcon, color: statusColor, size: 20),
+                                title: Text(
+                                  'Date: $dateStr',
+                                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                ),
+                                subtitle: Text(
+                                  'Status: $status • $periodAndRoom${record.note != null && record.note!.isNotEmpty ? '\nNote: ${record.note}' : ''}',
+                                  style: const TextStyle(fontSize: 12, height: 1.3),
+                                ),
+                                trailing: record.arrivedAt != null 
+                                    ? Text(record.arrivedAt!.substring(11, 16), style: const TextStyle(fontSize: 11, color: Colors.grey))
+                                    : null,
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSemesterSelector(LanguageProvider lang) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: Colors.grey[200],
+        borderRadius: BorderRadius.circular(25),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: GestureDetector(
+              onTap: () => setState(() => _selectedSemester = 1),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                decoration: BoxDecoration(
+                  color: _selectedSemester == 1 ? const Color(0xFFED7D31) : Colors.transparent,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Center(
+                  child: Text(
+                    lang.t('semester_1'),
+                    style: TextStyle(
+                      color: _selectedSemester == 1 ? Colors.white : Colors.black87,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            ),
           ),
-        );
-      },
+          Expanded(
+            child: GestureDetector(
+              onTap: () => setState(() => _selectedSemester = 2),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                decoration: BoxDecoration(
+                  color: _selectedSemester == 2 ? const Color(0xFFED7D31) : Colors.transparent,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Center(
+                  child: Text(
+                    lang.t('semester_2'),
+                    style: TextStyle(
+                      color: _selectedSemester == 2 ? Colors.white : Colors.black87,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTimetableSemesterSelector(LanguageProvider lang) {
+    final dateRange = _selectedTimetableSemester == 1 
+        ? '01/12/2025 - 01/05/2026' 
+        : '01/06/2026 - 06/11/2026';
+        
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(2),
+          decoration: BoxDecoration(
+            color: Colors.grey[200],
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => setState(() => _selectedTimetableSemester = 1),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    decoration: BoxDecoration(
+                      color: _selectedTimetableSemester == 1 ? const Color(0xFFED7D31) : Colors.transparent,
+                      borderRadius: BorderRadius.circular(15),
+                    ),
+                    child: Center(
+                      child: Text(
+                        lang.t('semester_1'),
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: _selectedTimetableSemester == 1 ? Colors.white : Colors.black87,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => setState(() => _selectedTimetableSemester = 2),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    decoration: BoxDecoration(
+                      color: _selectedTimetableSemester == 2 ? const Color(0xFFED7D31) : Colors.transparent,
+                      borderRadius: BorderRadius.circular(15),
+                    ),
+                    child: Center(
+                      child: Text(
+                        lang.t('semester_2'),
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: _selectedTimetableSemester == 2 ? Colors.white : Colors.black87,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          dateRange,
+          style: const TextStyle(fontSize: 11, color: Colors.grey, fontWeight: FontWeight.w500),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStatChip(String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: color.withOpacity(0.2)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold),
+      ),
     );
   }
 }

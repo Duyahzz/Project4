@@ -183,16 +183,17 @@ export function mapApiUsersToFrontend(
   apiStudents: ApiStudent[],
   apiTeachers: ApiTeacher[],
 ): User[] {
-  const teacherByUserId = new Map(apiTeachers.map(t => [t.userId!, t]))
-  const studentByUserId = new Map(apiStudents.map(s => [s.userId!, s]))
+  const teacherByUserId = new Map(apiTeachers.map(t => [t.userId!.toLowerCase(), t]))
+  const studentByUserId = new Map(apiStudents.map(s => [s.userId!.toLowerCase(), s]))
 
   return apiUsers.map(u => {
     const role = ROLE_MAP[u.roleId ?? 0] ?? 'student'
     // Students have email: null in the DB → synthesise from username
     const email = u.email ?? `${u.username ?? u.userId}@estudiez.edu.vn`
+    const uIdLower = (u.userId ?? '').toLowerCase()
 
     // Get address from student profile if available
-    const student = role === 'student' ? studentByUserId.get(u.userId ?? '') : undefined
+    const student = role === 'student' ? studentByUserId.get(uIdLower) : undefined
 
     const base: User = {
       email,
@@ -205,7 +206,7 @@ export function mapApiUsersToFrontend(
     }
 
     if (role === 'teacher') {
-      const t = teacherByUserId.get(u.userId ?? '')
+      const t = teacherByUserId.get(uIdLower)
       if (t?.subjectId) base.subject = SUBJECT_ID_MAP[t.subjectId] ?? String(t.subjectId)
     }
 
@@ -221,7 +222,7 @@ export function mapApiClass(c: ApiClass, nameByTeacherId?: Map<string, string>):
     grade: GRADE_MAP[c.gradeId ?? 1] ?? 10,
     year: YEAR_MAP[c.schoolYearId ?? 1] ?? '2025-2026',
     homeroomTeacher: c.homeroomTeacherId && nameByTeacherId
-      ? (nameByTeacherId.get(c.homeroomTeacherId) ?? undefined)
+      ? (nameByTeacherId.get(c.homeroomTeacherId.toLowerCase()) ?? undefined)
       : undefined,
   }
 }
@@ -230,11 +231,13 @@ export function mapApiClass(c: ApiClass, nameByTeacherId?: Map<string, string>):
 export function mapApiAssessmentToExam(a: ApiAssessment): Exam {
   return {
     id: a.assessmentId ?? 0,
+    classId: String(a.classId ?? ''),
     semesterId: SEMESTER_ID_MAP[a.semesterId ?? 1] ?? 'S1-2025',
     subject: SUBJECT_ID_MAP[a.subjectId ?? 0] ?? String(a.subjectId),
     name: a.title ?? '',
     date: a.assessmentDate ?? '',
     completed: a.status === 'COMPLETED',
+    weight: a.weight ?? 0.10,
   }
 }
 
@@ -249,7 +252,7 @@ export function mapApiMarkToScore(
 ): ScoreDetail {
   return {
     id: mark.studentMarkId ?? 0,
-    studentEmail: emailByStudentId.get(mark.studentId ?? '') ?? '',
+    studentEmail: emailByStudentId.get((mark.studentId ?? '').toLowerCase()) ?? '',
     classId: String(assessment.classId ?? ''),
     subject: SUBJECT_ID_MAP[assessment.subjectId ?? 0] ?? String(assessment.subjectId),
     testId: String(mark.assessmentId ?? ''),

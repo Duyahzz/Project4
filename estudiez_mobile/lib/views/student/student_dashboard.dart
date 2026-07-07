@@ -224,10 +224,14 @@ class _StudentDashboardState extends State<StudentDashboard> {
         ? 100.0 
         : (presentCount / filteredAttendance.length) * 100;
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return RefreshIndicator(
+      onRefresh: _fetchStudentData,
+      color: const Color(0xFFED7D31),
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Welcome Header
           Card(
@@ -385,7 +389,8 @@ class _StudentDashboardState extends State<StudentDashboard> {
           const SizedBox(height: 20),
         ],
       ),
-    );
+    ), // SingleChildScrollView
+    ); // RefreshIndicator
   }
 
   Widget _buildStatCard({
@@ -420,6 +425,56 @@ class _StudentDashboardState extends State<StudentDashboard> {
     );
   }
 
+  List<String> _getTimetableDates() {
+    final startS1 = DateTime(2025, 12, 1);
+    final endS1 = DateTime(2026, 5, 1);
+    final startS2 = DateTime(2026, 6, 1);
+    final endS2 = DateTime(2026, 11, 6);
+
+    DateTime baseDate;
+    final now = DateTime.now();
+
+    if (_selectedTimetableSemester == 1) {
+      if (now.isAfter(startS1) && now.isBefore(endS1)) {
+        baseDate = now;
+      } else {
+        baseDate = startS1;
+      }
+    } else {
+      if (now.isAfter(startS2) && now.isBefore(endS2)) {
+        baseDate = now;
+      } else {
+        baseDate = startS2;
+      }
+    }
+
+    final weekday = baseDate.weekday;
+    final monday = baseDate.subtract(Duration(days: weekday - 1));
+
+    final list = <String>[];
+    for (int i = 0; i < 6; i++) {
+      final date = monday.add(Duration(days: i));
+      final dayStr = date.day.toString().padLeft(2, '0');
+      final monthStr = date.month.toString().padLeft(2, '0');
+      list.add('$dayStr/$monthStr');
+    }
+    return list;
+  }
+
+  Widget _buildTabLabel(String day, String date) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(day, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+          const SizedBox(height: 2),
+          Text(date, style: const TextStyle(fontSize: 10)),
+        ],
+      ),
+    );
+  }
+
   // ─── TIMETABLE TAB ───
   Widget _buildTimetableTab() {
     final lang = Provider.of<LanguageProvider>(context);
@@ -438,25 +493,30 @@ class _StudentDashboardState extends State<StudentDashboard> {
       daySlots[key]?.sort((a, b) => a.period.compareTo(b.period));
     }
 
+    final dates = _getTimetableDates();
+    final today = DateTime.now().weekday; // Mon=1, ..., Sun=7
+    final initialIndex = (today >= 1 && today <= 6) ? (today - 1) : 0;
+
     return DefaultTabController(
       length: 6,
+      initialIndex: initialIndex,
       child: Scaffold(
         appBar: AppBar(
           backgroundColor: Colors.white,
           elevation: 0,
           title: _buildTimetableSemesterSelector(lang),
-          bottom: const TabBar(
+          bottom: TabBar(
             isScrollable: true,
-            labelColor: Color(0xFFED7D31),
+            labelColor: const Color(0xFFED7D31),
             unselectedLabelColor: Colors.grey,
-            indicatorColor: Color(0xFFED7D31),
+            indicatorColor: const Color(0xFFED7D31),
             tabs: [
-              Tab(text: 'Mon'),
-              Tab(text: 'Tue'),
-              Tab(text: 'Wed'),
-              Tab(text: 'Thu'),
-              Tab(text: 'Fri'),
-              Tab(text: 'Sat'),
+              Tab(child: _buildTabLabel('Mon', dates[0])),
+              Tab(child: _buildTabLabel('Tue', dates[1])),
+              Tab(child: _buildTabLabel('Wed', dates[2])),
+              Tab(child: _buildTabLabel('Thu', dates[3])),
+              Tab(child: _buildTabLabel('Fri', dates[4])),
+              Tab(child: _buildTabLabel('Sat', dates[5])),
             ],
           ),
         ),
@@ -601,6 +661,27 @@ class _StudentDashboardState extends State<StudentDashboard> {
       return sem == _selectedSemester;
     }).toList();
 
+    // Group records by subject
+    final Map<String, List<AttendanceRecord>> grouped = {};
+    for (var record in filtered) {
+      LessonSession? lesson;
+      for (var l in _lessons) {
+        if (l.lessonSessionId == record.lessonSessionId) {
+          lesson = l;
+          break;
+        }
+      }
+      final subjectName = lesson != null 
+          ? (api.subjectMap[lesson.subjectId] ?? 'Subject ${lesson.subjectId}') 
+          : 'Lesson';
+      if (!grouped.containsKey(subjectName)) {
+        grouped[subjectName] = [];
+      }
+      grouped[subjectName]!.add(record);
+    }
+
+    final sortedSubjects = grouped.keys.toList()..sort();
+
     return Column(
       children: [
         Padding(
@@ -611,66 +692,128 @@ class _StudentDashboardState extends State<StudentDashboard> {
           child: filtered.isEmpty
               ? const Center(child: Text('No attendance history found for this semester.'))
               : ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: filtered.length,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  itemCount: sortedSubjects.length,
                   itemBuilder: (context, idx) {
-                    final record = filtered[idx];
-                    final status = record.status;
+                    final subjectName = sortedSubjects[idx];
+                    final records = grouped[subjectName] ?? [];
 
-                    Color color = Colors.grey;
-                    IconData icon = Icons.help_outline;
-                    if (status == 'PRESENT') { color = Colors.green; icon = Icons.check_circle_outline; }
-                    else if (status == 'ABSENT') { color = Colors.red; icon = Icons.cancel_outlined; }
-                    else if (status == 'LATE') { color = Colors.orange; icon = Icons.watch_later_outlined; }
-                    else if (status == 'EXCUSED') { color = Colors.blue; icon = Icons.info_outline; }
-
-                    // Find the corresponding lesson session details
-                    LessonSession? lesson;
-                    for (var l in _lessons) {
-                      if (l.lessonSessionId == record.lessonSessionId) {
-                        lesson = l;
-                        break;
-                      }
-                    }
-
-                    String subjectName = 'Lesson';
-                    String date = 'N/A';
-                    String periodAndRoom = 'Period: N/A';
-                    if (lesson != null) {
-                      subjectName = api.subjectMap[lesson.subjectId] ?? 'Subject ${lesson.subjectId}';
-                      date = lesson.sessionDate.length >= 10 
-                          ? lesson.sessionDate.substring(0, 10) 
-                          : lesson.sessionDate;
-
-                      // Look up class hours for this period from the timetable
-                      String timeString = '';
-                      for (var slot in _timetable) {
-                        if (slot.period == lesson.periodNo && slot.startTime.isNotEmpty && slot.endTime.isNotEmpty) {
-                          timeString = ' (${slot.startTime} - ${slot.endTime})';
-                          break;
-                        }
-                      }
-                      periodAndRoom = 'Period ${lesson.periodNo}$timeString${lesson.room != null ? ' - Room ${lesson.room}' : ''}';
+                    // Calculate stats
+                    int present = 0;
+                    int absent = 0;
+                    int lateCount = 0;
+                    int excused = 0;
+                    for (var r in records) {
+                      if (r.status == 'PRESENT') present++;
+                      else if (r.status == 'ABSENT') absent++;
+                      else if (r.status == 'LATE') lateCount++;
+                      else if (r.status == 'EXCUSED') excused++;
                     }
 
                     return Card(
-                      margin: const EdgeInsets.symmetric(vertical: 8),
-                      child: ListTile(
-                        leading: Icon(icon, color: color, size: 28),
-                        title: Text(subjectName, style: const TextStyle(fontWeight: FontWeight.bold)),
-                        subtitle: Text(
-                          'Status: $status • $periodAndRoom\nDate: $date${record.note != null ? '\nNote: ${record.note}' : ''}',
-                          style: const TextStyle(fontSize: 13, height: 1.4),
+                      margin: const EdgeInsets.only(bottom: 12),
+                      clipBehavior: Clip.antiAlias,
+                      child: Theme(
+                        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                        child: ExpansionTile(
+                          leading: const CircleAvatar(
+                            backgroundColor: Color(0x1F0A2540),
+                            child: Icon(Icons.class_, color: Color(0xFF0A2540)),
+                          ),
+                          title: Text(
+                            subjectName,
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF0A2540)),
+                          ),
+                          subtitle: Padding(
+                            padding: const EdgeInsets.only(top: 4.0),
+                            child: Wrap(
+                              spacing: 8,
+                              runSpacing: 4,
+                              children: [
+                                _buildStatChip('P: $present', Colors.green),
+                                _buildStatChip('A: $absent', Colors.red),
+                                _buildStatChip('L: $lateCount', Colors.orange),
+                                if (excused > 0) _buildStatChip('E: $excused', Colors.blue),
+                              ],
+                            ),
+                          ),
+                          children: records.map((record) {
+                            final status = record.status;
+                            Color statusColor = Colors.grey;
+                            IconData statusIcon = Icons.help_outline;
+                            if (status == 'PRESENT') { statusColor = Colors.green; statusIcon = Icons.check_circle_outline; }
+                            else if (status == 'ABSENT') { statusColor = Colors.red; statusIcon = Icons.cancel_outlined; }
+                            else if (status == 'LATE') { statusColor = Colors.orange; statusIcon = Icons.watch_later_outlined; }
+                            else if (status == 'EXCUSED') { statusColor = Colors.blue; statusIcon = Icons.info_outline; }
+
+                            LessonSession? lesson;
+                            for (var l in _lessons) {
+                              if (l.lessonSessionId == record.lessonSessionId) {
+                                lesson = l;
+                                break;
+                              }
+                            }
+
+                            String dateStr = 'N/A';
+                            String periodAndRoom = 'Period: N/A';
+                            if (lesson != null) {
+                              dateStr = lesson.sessionDate.length >= 10 
+                                  ? lesson.sessionDate.substring(0, 10) 
+                                  : lesson.sessionDate;
+
+                              String timeString = '';
+                              for (var slot in _timetable) {
+                                if (slot.period == lesson.periodNo && slot.startTime.isNotEmpty && slot.endTime.isNotEmpty) {
+                                  timeString = ' (${slot.startTime} - ${slot.endTime})';
+                                  break;
+                                }
+                              }
+                              periodAndRoom = 'Period ${lesson.periodNo}$timeString${lesson.room != null ? ' - Room ${lesson.room}' : ''}';
+                            }
+
+                            return Container(
+                              decoration: BoxDecoration(
+                                border: Border(top: BorderSide(color: Colors.grey.withOpacity(0.15))),
+                              ),
+                              child: ListTile(
+                                dense: true,
+                                leading: Icon(statusIcon, color: statusColor, size: 20),
+                                title: Text(
+                                  'Date: $dateStr',
+                                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                                ),
+                                subtitle: Text(
+                                  'Status: $status • $periodAndRoom${record.note != null && record.note!.isNotEmpty ? '\nNote: ${record.note}' : ''}',
+                                  style: const TextStyle(fontSize: 12, height: 1.3),
+                                ),
+                                trailing: record.arrivedAt != null 
+                                    ? Text(record.arrivedAt!.substring(11, 16), style: const TextStyle(fontSize: 11, color: Colors.grey))
+                                    : null,
+                              ),
+                            );
+                          }).toList(),
                         ),
-                        trailing: record.arrivedAt != null 
-                            ? Text(record.arrivedAt!.substring(11, 16), style: const TextStyle(fontSize: 12))
-                            : null,
                       ),
                     );
                   },
                 ),
         ),
       ],
+    );
+  }
+
+  Widget _buildStatChip(String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: color.withOpacity(0.2)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.bold),
+      ),
     );
   }
 
@@ -770,8 +913,8 @@ class _StudentDashboardState extends State<StudentDashboard> {
 
   Widget _buildTimetableSemesterSelector(LanguageProvider lang) {
     final dateRange = _selectedTimetableSemester == 1 
-        ? '01/09/2025 - 15/01/2026' 
-        : '16/01/2026 - 30/06/2026';
+        ? '01/12/2025 - 01/05/2026' 
+        : '01/06/2026 - 06/11/2026';
         
     return Column(
       mainAxisSize: MainAxisSize.min,

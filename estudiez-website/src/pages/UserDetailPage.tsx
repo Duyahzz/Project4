@@ -23,6 +23,15 @@ const ATTENDANCE_BADGE: Record<AttendanceStatus, string> = {
 }
 
 const PHONE_PATTERN = /^[+\d][\d\s().-]{6,}$/
+const PERIOD_TIMES: Record<number, { start: string; end: string }> = {
+  1: { start: '07:30', end: '08:15' },
+  2: { start: '08:25', end: '09:10' },
+  3: { start: '09:20', end: '10:05' },
+  4: { start: '10:15', end: '11:00' },
+  5: { start: '11:10', end: '11:55' },
+  6: { start: '13:00', end: '13:45' },
+  7: { start: '13:50', end: '14:35' },
+}
 const EMAIL_PATTERN = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
 
 interface EditFormState {
@@ -549,9 +558,7 @@ function TeacherDetail({ user }: { user: User }) {
     const grouped = new Map<string, typeof slots>()
     for (const day of days) {
       const daySlots = slots.filter((s) => s.day === day).sort((a, b) => {
-        const [aH, aM] = a.startTime.split(':').map(Number)
-        const [bH, bM] = b.startTime.split(':').map(Number)
-        return aH * 60 + aM - (bH * 60 + bM)
+        return a.period - b.period
       })
       if (daySlots.length > 0) {
         grouped.set(day, daySlots)
@@ -625,7 +632,7 @@ function TeacherDetail({ user }: { user: User }) {
                         className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
                       >
                         <p className="text-xs text-slate-500">
-                          {slot.startTime} - {slot.endTime}
+                          Period {slot.period} ({PERIOD_TIMES[slot.period]?.start ?? '00:00'} - {PERIOD_TIMES[slot.period]?.end ?? '00:00'})
                         </p>
                         <p className="font-semibold text-slate-800">{slot.subject}</p>
                         <p className="text-xs text-indigo-600">

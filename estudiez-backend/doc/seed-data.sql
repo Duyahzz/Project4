@@ -769,15 +769,15 @@ INSERT INTO StudentParentLinks (StudentId,ParentId,Relationship,IsPrimaryContact
 
 -- â”€â”€ 11. SCHOOL STRUCTURE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 INSERT INTO SchoolYears (Name,StartDate,EndDate,IsCurrent)
-    VALUES (N'2025-2026','2025-09-01','2026-06-30',1);
+    VALUES (N'2025-2026','2025-12-01','2026-11-30',1);
 DECLARE @syId INT = SCOPE_IDENTITY();
 
 INSERT INTO Semesters (SchoolYearId,Name,StartDate,EndDate)
-    VALUES (@syId,N'Semester 1','2025-09-01','2026-01-15');
+    VALUES (@syId,N'Semester 1','2025-12-01','2026-05-01');
 DECLARE @sem1 INT = SCOPE_IDENTITY();
 
 INSERT INTO Semesters (SchoolYearId,Name,StartDate,EndDate)
-    VALUES (@syId,N'Semester 2','2026-01-20','2026-06-30');
+    VALUES (@syId,N'Semester 2','2026-06-01','2026-11-06');
 DECLARE @sem2 INT = SCOPE_IDENTITY();
 
 -- Classes
