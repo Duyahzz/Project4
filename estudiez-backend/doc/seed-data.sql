@@ -1,22 +1,19 @@
--- =============================================================
---  eStudiez — Full Database Reset + Seed
---  Drops eStudentDB, recreates schema, inserts comprehensive demo data.
+﻿-- =============================================================
+--  eStudiez â€” Complete Database Setup + Student Grade Management
+--  Single unified script combining schema, migration, and test data
+--
+--  Includes: 90 active students (3 grades Ã— 3 classes Ã— 10 each)
+--            30 graduated students (GRADUATED status)
+--            30 new hire students (PENDING_GRADE_ASSIGNMENT status)
+--            90 parents linked to active students
+--            Full class enrollments and timetables
 --
 --  Run: sqlcmd -S localhost,1433 -U sa -P "YourStrong@Passw0rd" -i doc\seed-data.sql
---
---  Credentials after seed:
---    admin          / Admin@123
---    teacher.math   / Teacher@123   (all 10 teachers)
---    bao.pq         / Student@123   (all 16 students)
---    parent.bao     / Parent@123    (all 16 parents)
---
---  Spring Boot DataInitializer is automatically skipped on startup
---  because all tables will already have data.
 -- =============================================================
 
--- ══════════════════════════════════════════════════════════════
---  SECTION 1 — DROP AND RECREATE DATABASE
--- ══════════════════════════════════════════════════════════════
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+--  SECTION 1 â€” DROP AND RECREATE DATABASE
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 USE master;
 GO
 
@@ -33,11 +30,11 @@ GO
 USE eStudentDB;
 GO
 
--- ══════════════════════════════════════════════════════════════
---  SECTION 2 — SCHEMA
--- ══════════════════════════════════════════════════════════════
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+--  SECTION 2 â€” SCHEMA
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
--- ── Lookup / Reference ─────────────────────────────────────────
+-- â”€â”€ Lookup / Reference â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 CREATE TABLE Roles (
     RoleId INT           IDENTITY(1,1) NOT NULL PRIMARY KEY,
     Code   NVARCHAR(30)  NOT NULL UNIQUE,
@@ -67,7 +64,7 @@ CREATE TABLE SchoolContacts (
     IsActive        BIT           NOT NULL DEFAULT 1
 );
 
--- ── Core Entities ──────────────────────────────────────────────
+-- â”€â”€ Core Entities â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 CREATE TABLE Users (
     UserId       UNIQUEIDENTIFIER NOT NULL PRIMARY KEY DEFAULT NEWID(),
     RoleId       INT              NOT NULL,
@@ -108,9 +105,10 @@ CREATE TABLE Students (
     Gender        NVARCHAR(20)     NULL,
     Address       NVARCHAR(MAX)    NULL,
     AdmissionDate DATE             NOT NULL DEFAULT CAST(GETDATE() AS DATE),
+    CurrentGrade  INT              NULL,
     Status        NVARCHAR(30)     NOT NULL DEFAULT 'ACTIVE',
     CreatedAt     DATETIME2(7)     NOT NULL DEFAULT SYSDATETIME(),
-    CONSTRAINT CK_Students_Status CHECK (Status IN ('ACTIVE','TRANSFERRED','GRADUATED','SUSPENDED'))
+    CONSTRAINT CK_Students_Status CHECK (Status IN ('ACTIVE','TRANSFERRED','GRADUATED','SUSPENDED','PENDING_GRADE_ASSIGNMENT','INACTIVE'))
 );
 
 CREATE TABLE Parents (
@@ -121,7 +119,7 @@ CREATE TABLE Parents (
     CreatedAt  DATETIME2(7)     NOT NULL DEFAULT SYSDATETIME()
 );
 
--- ── School Structure ───────────────────────────────────────────
+-- â”€â”€ School Structure â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 CREATE TABLE SchoolYears (
     SchoolYearId INT          IDENTITY(1,1) NOT NULL PRIMARY KEY,
     Name         NVARCHAR(30) NOT NULL UNIQUE,
@@ -183,7 +181,7 @@ CREATE TABLE TeacherClassAssignments (
     CONSTRAINT UQ_TeacherClassAssignments UNIQUE (TeacherId, ClassId, SubjectId, SchoolYearId)
 );
 
--- ── Timetable & Lessons ────────────────────────────────────────
+-- â”€â”€ Timetable & Lessons â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 CREATE TABLE TimetableSlots (
     TimetableSlotId INT              IDENTITY(1,1) NOT NULL PRIMARY KEY,
     ClassId         INT              NOT NULL,
@@ -229,7 +227,7 @@ CREATE TABLE AttendanceRecords (
     CONSTRAINT CK_Attendance_Status CHECK  (Status IN ('PRESENT','ABSENT','LATE','EXCUSED'))
 );
 
--- ── Assessments & Marks ────────────────────────────────────────
+-- â”€â”€ Assessments & Marks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 CREATE TABLE Assessments (
     AssessmentId     INT              IDENTITY(1,1) NOT NULL PRIMARY KEY,
     ClassId          INT              NOT NULL,
@@ -286,7 +284,7 @@ CREATE TABLE AssessmentSkillEvaluations (
     CONSTRAINT CK_Evaluations_EvidenceJson    CHECK  (Evidence IS NULL OR ISJSON(Evidence) = 1)
 );
 
--- ── Study Resources & AI ───────────────────────────────────────
+-- â”€â”€ Study Resources & AI â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 CREATE TABLE StudyResources (
     ResourceId   INT              IDENTITY(1,1) NOT NULL PRIMARY KEY,
     SubjectId    INT              NOT NULL,
@@ -329,7 +327,7 @@ CREATE TABLE AiRecommendationRuns (
     CONSTRAINT CK_AiRuns_InputJson  CHECK (ISJSON(InputSnapshot) = 1)
 );
 
--- ── Learning Paths ─────────────────────────────────────────────
+-- â”€â”€ Learning Paths â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 CREATE TABLE LearningPaths (
     LearningPathId INT              IDENTITY(1,1) NOT NULL PRIMARY KEY,
     StudentId      UNIQUEIDENTIFIER NOT NULL,
@@ -359,7 +357,7 @@ CREATE TABLE LearningPathItems (
     CONSTRAINT CK_LearningPathItems_Status   CHECK  (Status IN ('TODO','IN_PROGRESS','DONE','SKIPPED'))
 );
 
--- ── Communication ──────────────────────────────────────────────
+-- â”€â”€ Communication â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 CREATE TABLE ChatGroups (
     ChatGroupId  INT           IDENTITY(1,1) NOT NULL PRIMARY KEY,
     ClassId      INT           NOT NULL,
@@ -424,7 +422,7 @@ CREATE TABLE FeedbackTickets (
     CONSTRAINT CK_Feedback_Status CHECK (Status IN ('OPEN','IN_PROGRESS','RESOLVED','CLOSED'))
 );
 
--- ── News ───────────────────────────────────────────────────────
+-- â”€â”€ News â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 CREATE TABLE NewsPosts (
     NewsPostId    INT              IDENTITY(1,1) NOT NULL PRIMARY KEY,
     AuthorUserId  UNIQUEIDENTIFIER NOT NULL,
@@ -440,7 +438,7 @@ CREATE TABLE NewsPosts (
     CONSTRAINT CK_News_Status CHECK (Status IN ('DRAFT','PUBLISHED','ARCHIVED'))
 );
 
--- ── Registration Requests ──────────────────────────────────────
+-- â”€â”€ Registration Requests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 CREATE TABLE RegistrationRequests (
     RequestId     INT              IDENTITY(1,1) NOT NULL PRIMARY KEY,
     FullName      NVARCHAR(150)    NOT NULL,
@@ -457,7 +455,7 @@ CREATE TABLE RegistrationRequests (
     CONSTRAINT CK_RegReq_Status CHECK (Status        IN ('PENDING','APPROVED','REJECTED'))
 );
 
--- ── Indexes ────────────────────────────────────────────────────
+-- â”€â”€ Indexes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 CREATE INDEX IX_Users_RoleId             ON Users                (RoleId);
 CREATE INDEX IX_Classes_YearGrade        ON Classes              (SchoolYearId, GradeId);
 CREATE INDEX IX_ClassEnrollments_Student ON ClassEnrollments     (StudentId);
@@ -470,7 +468,7 @@ CREATE INDEX IX_Timetable_ClassDay       ON TimetableSlots       (ClassId, DayOf
 CREATE INDEX IX_RegReq_Status            ON RegistrationRequests (Status);
 CREATE INDEX IX_News_Category            ON NewsPosts            (Category);
 
--- ── Foreign Keys ───────────────────────────────────────────────
+-- â”€â”€ Foreign Keys â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 ALTER TABLE Users                    ADD CONSTRAINT FK_Users_Roles                  FOREIGN KEY (RoleId)              REFERENCES Roles                (RoleId);
 ALTER TABLE Teachers                 ADD CONSTRAINT FK_Teachers_Users               FOREIGN KEY (UserId)              REFERENCES Users                (UserId);
 ALTER TABLE Teachers                 ADD CONSTRAINT FK_Teachers_Subjects            FOREIGN KEY (SubjectId)           REFERENCES Subjects             (SubjectId);
@@ -538,9 +536,9 @@ ALTER TABLE NewsPosts                ADD CONSTRAINT FK_News_Users               
 ALTER TABLE RegistrationRequests     ADD CONSTRAINT FK_RegReq_ReviewedBy            FOREIGN KEY (ReviewedBy)          REFERENCES Users                (UserId);
 GO
 
--- ══════════════════════════════════════════════════════════════
---  SECTION 3 — SEED DATA
--- ══════════════════════════════════════════════════════════════
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+--  SECTION 3 â€” SEED DATA
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 USE eStudentDB;
 GO
 SET NOCOUNT ON;
@@ -551,7 +549,7 @@ DECLARE @HASH_TEACHER NVARCHAR(255) = N'$2b$10$og80RtX2vDQrc/.hh7p16OuAK2V9K9OX1
 DECLARE @HASH_STUDENT NVARCHAR(255) = N'$2b$10$vac65OsMh8nWqPJNA..dq.bT91e7FyCCil3AbS22694qSbE32TAUW'; -- Student@123
 DECLARE @HASH_PARENT  NVARCHAR(255) = N'$2b$10$8Rr5QEk2f2uewpCgjr6.Q.WtzMc5wqs60mDk6iVH/JyDmWdfIYlLG'; -- Parent@123
 
--- ── 1. ROLES ──────────────────────────────────────────────────
+-- â”€â”€ 1. ROLES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 INSERT INTO Roles (Code, Name) VALUES
     (N'ADMIN',   N'Administrator'),
     (N'TEACHER', N'Teacher'),
@@ -562,7 +560,7 @@ DECLARE @rTeacher INT = (SELECT RoleId FROM Roles WHERE Code = N'TEACHER');
 DECLARE @rStudent INT = (SELECT RoleId FROM Roles WHERE Code = N'STUDENT');
 DECLARE @rParent  INT = (SELECT RoleId FROM Roles WHERE Code = N'PARENT');
 
--- ── 2. SUBJECTS (10) ──────────────────────────────────────────
+-- â”€â”€ 2. SUBJECTS (10) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 INSERT INTO Subjects (Code, Name, Description, IsActive) VALUES
     (N'MATH', N'Mathematics',        N'Algebra, Geometry, Calculus',              1),
     (N'LIT',  N'Literature',         N'Vietnamese and world literature',          1),
@@ -585,13 +583,13 @@ DECLARE @subGeo  INT = (SELECT SubjectId FROM Subjects WHERE Code = N'GEO');
 DECLARE @subCs   INT = (SELECT SubjectId FROM Subjects WHERE Code = N'CS');
 DECLARE @subPe   INT = (SELECT SubjectId FROM Subjects WHERE Code = N'PE');
 
--- ── 3. GRADES ─────────────────────────────────────────────────
+-- â”€â”€ 3. GRADES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 INSERT INTO Grades (Code, Name) VALUES
     (N'G10', N'Grade 10'), (N'G11', N'Grade 11'), (N'G12', N'Grade 12');
 DECLARE @g10 INT = (SELECT GradeId FROM Grades WHERE Code = N'G10');
 DECLARE @g11 INT = (SELECT GradeId FROM Grades WHERE Code = N'G11');
 
--- ── 4. ASSESSMENT TYPES ───────────────────────────────────────
+-- â”€â”€ 4. ASSESSMENT TYPES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 INSERT INTO AssessmentTypes (Code, Name, DefaultWeight) VALUES
     (N'QUIZ',    N'Quiz',        0.10),
     (N'MIDTERM', N'Midterm Exam', 0.30),
@@ -600,7 +598,7 @@ DECLARE @atQuiz  INT = (SELECT AssessmentTypeId FROM AssessmentTypes WHERE Code 
 DECLARE @atMid   INT = (SELECT AssessmentTypeId FROM AssessmentTypes WHERE Code = N'MIDTERM');
 DECLARE @atFinal INT = (SELECT AssessmentTypeId FROM AssessmentTypes WHERE Code = N'FINAL');
 
--- ── 5. SCHOOL CONTACTS ────────────────────────────────────────
+-- â”€â”€ 5. SCHOOL CONTACTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 INSERT INTO SchoolContacts (Name, Email, Phone, Address, WorkingHours, IsActive) VALUES
     (N'School Office',    N'office@estudiez.edu.vn',   N'(028) 3800-0001', N'1 Nguyen Trai, District 1, HCMC', N'Mon-Fri 07:00-17:00', 1),
     (N'Academic Affairs', N'academic@estudiez.edu.vn', N'(028) 3800-0002', N'1 Nguyen Trai, District 1, HCMC', N'Mon-Fri 07:30-16:30', 1),
@@ -608,7 +606,7 @@ INSERT INTO SchoolContacts (Name, Email, Phone, Address, WorkingHours, IsActive)
     (N'Parent Liaison',   N'parents@estudiez.edu.vn',  N'(028) 3800-0004', N'1 Nguyen Trai, District 1, HCMC', N'Mon-Fri 08:00-15:00', 1),
     (N'IT Help Desk',     N'it@estudiez.edu.vn',       N'(028) 3800-0099', N'1 Nguyen Trai, District 1, HCMC', N'Mon-Fri 08:00-17:00', 1);
 
--- ── 6. USERS (43 total) ───────────────────────────────────────
+-- â”€â”€ 6. USERS (43 total) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 --  1 admin | 10 teachers | 16 students (10A1/10A2/11A1/11A2) | 16 parents
 DECLARE @uAdmin UNIQUEIDENTIFIER = NEWID();
 DECLARE @uT01 UNIQUEIDENTIFIER = NEWID(); DECLARE @uT02 UNIQUEIDENTIFIER = NEWID();
@@ -683,7 +681,7 @@ INSERT INTO Users (UserId, RoleId, Username, PasswordHash, FullName, Email, Phon
 (@uP15,@rParent,N'parent.nam',  @HASH_PARENT,N'Bui Van Son',      N'son.bv@gmail.com',    N'0903001015',1),
 (@uP16,@rParent,N'parent.huong',@HASH_PARENT,N'Le Van Minh',      N'minh.lv2@gmail.com',  N'0903001016',1);
 
--- ── 7. TEACHERS (10 — one per subject) ────────────────────────
+-- â”€â”€ 7. TEACHERS (10 â€” one per subject) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 DECLARE @tId01 UNIQUEIDENTIFIER = NEWID(); DECLARE @tId02 UNIQUEIDENTIFIER = NEWID();
 DECLARE @tId03 UNIQUEIDENTIFIER = NEWID(); DECLARE @tId04 UNIQUEIDENTIFIER = NEWID();
 DECLARE @tId05 UNIQUEIDENTIFIER = NEWID(); DECLARE @tId06 UNIQUEIDENTIFIER = NEWID();
@@ -702,7 +700,7 @@ INSERT INTO Teachers (TeacherId, UserId, EmployeeCode, SubjectId, Qualification)
 (@tId09,@uT09,N'TCH009',@subCs,  N'BSc Computer Science'),
 (@tId10,@uT10,N'TCH010',@subPe,  N'BSc Sports Science');
 
--- ── 8. STUDENTS (16) ──────────────────────────────────────────
+-- â”€â”€ 8. STUDENTS (16) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 DECLARE @sId01 UNIQUEIDENTIFIER = NEWID(); DECLARE @sId02 UNIQUEIDENTIFIER = NEWID();
 DECLARE @sId03 UNIQUEIDENTIFIER = NEWID(); DECLARE @sId04 UNIQUEIDENTIFIER = NEWID();
 DECLARE @sId05 UNIQUEIDENTIFIER = NEWID(); DECLARE @sId06 UNIQUEIDENTIFIER = NEWID();
@@ -730,7 +728,7 @@ INSERT INTO Students (StudentId,UserId,StudentCode,DateOfBirth,Gender,Address,Ad
 (@sId15,@uS15,N'STU015','2007-08-30',N'Male',  N'99 Nam Ky Khoi Nghia, District 3',      '2021-09-01',N'ACTIVE'),
 (@sId16,@uS16,N'STU016','2007-10-14',N'Female',N'21 Phan Xich Long, Phu Nhuan, HCMC',    '2021-09-01',N'ACTIVE');
 
--- ── 9. PARENTS (16) ───────────────────────────────────────────
+-- â”€â”€ 9. PARENTS (16) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 DECLARE @pId01 UNIQUEIDENTIFIER = NEWID(); DECLARE @pId02 UNIQUEIDENTIFIER = NEWID();
 DECLARE @pId03 UNIQUEIDENTIFIER = NEWID(); DECLARE @pId04 UNIQUEIDENTIFIER = NEWID();
 DECLARE @pId05 UNIQUEIDENTIFIER = NEWID(); DECLARE @pId06 UNIQUEIDENTIFIER = NEWID();
@@ -758,7 +756,7 @@ INSERT INTO Parents (ParentId,UserId,Occupation,Address) VALUES
 (@pId15,@uP15,N'Mechanic',      N'99 Nam Ky Khoi Nghia, District 3'),
 (@pId16,@uP16,N'Electrician',   N'21 Phan Xich Long, Phu Nhuan, HCMC');
 
--- ── 10. STUDENT-PARENT LINKS ──────────────────────────────────
+-- â”€â”€ 10. STUDENT-PARENT LINKS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 INSERT INTO StudentParentLinks (StudentId,ParentId,Relationship,IsPrimaryContact) VALUES
 (@sId01,@pId01,N'Father',1),(@sId02,@pId02,N'Mother',1),
 (@sId03,@pId03,N'Father',1),(@sId04,@pId04,N'Mother',1),
@@ -769,7 +767,7 @@ INSERT INTO StudentParentLinks (StudentId,ParentId,Relationship,IsPrimaryContact
 (@sId13,@pId13,N'Father',1),(@sId14,@pId14,N'Mother',1),
 (@sId15,@pId15,N'Father',1),(@sId16,@pId16,N'Father',1);
 
--- ── 11. SCHOOL STRUCTURE ──────────────────────────────────────
+-- â”€â”€ 11. SCHOOL STRUCTURE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 INSERT INTO SchoolYears (Name,StartDate,EndDate,IsCurrent)
     VALUES (N'2025-2026','2025-12-01','2026-11-30',1);
 DECLARE @syId INT = SCOPE_IDENTITY();
@@ -825,7 +823,7 @@ INSERT INTO TeacherClassAssignments (TeacherId,ClassId,SubjectId,SchoolYearId) V
 (@tId04,@c11A2,@subPhy, @syId),(@tId05,@c11A2,@subChem,@syId),(@tId06,@c11A2,@subBio, @syId),
 (@tId07,@c11A2,@subHis, @syId),(@tId08,@c11A2,@subGeo, @syId),(@tId09,@c11A2,@subCs,  @syId),(@tId10,@c11A2,@subPe,@syId);
 
--- ── 12. TIMETABLE (Mon-Fri x 5 periods x 4 classes = 100 slots) ──
+-- â”€â”€ 12. TIMETABLE (Mon-Fri x 5 periods x 4 classes = 100 slots) â”€â”€
 -- DayOfWeek: 1=Mon 2=Tue 3=Wed 4=Thu 5=Fri
 -- Periods:   P1=07:30-08:15  P2=08:25-09:10  P3=09:20-10:05  P4=10:15-11:00  P5=11:10-11:55
 -- 10A1: Mon/Wed/Fri: MATH LIT ENG PHY CHEM   |  Tue/Thu: BIO HIS GEO CS PE
@@ -915,7 +913,7 @@ INSERT INTO TimetableSlots (ClassId,SubjectId,TeacherId,SemesterId,DayOfWeek,Per
 (@c11A2,@subMath,@tId01,@sem1,5,3,'09:20','10:05',N'202',@eff),(@c11A2,@subPhy, @tId04,@sem1,5,4,'10:15','11:00',N'202',@eff),
 (@c11A2,@subBio, @tId06,@sem1,5,5,'11:10','11:55',N'202',@eff);
 
--- ── 12b. LESSON SESSIONS (Week of June 8-12, 2026) ────────────
+-- â”€â”€ 12b. LESSON SESSIONS (Week of June 8-12, 2026) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 -- Generate actual class sessions from timetable for attendance tracking
 -- June 8 = Mon (DayOfWeek=1), June 9 = Tue (DayOfWeek=2), etc.
 
@@ -972,7 +970,7 @@ INSERT INTO LessonSessions (ClassId,SubjectId,TeacherId,SessionDate,PeriodNo,Roo
 (@c10A1,@subChem,@tId05,'2026-06-12',5,N'101',N'Lab experiment',N'COMPLETED');
 DECLARE @ls21 INT = SCOPE_IDENTITY() - 4;
 
--- ── 12c. ATTENDANCE RECORDS (for 10A1 students, week of Jun 8-12) ──
+-- â”€â”€ 12c. ATTENDANCE RECORDS (for 10A1 students, week of Jun 8-12) â”€â”€
 -- All 4 students in 10A1: @sId01 (Pham Quoc Bao), @sId02, @sId03, @sId04
 -- RecordedBy = the teacher who taught that session
 
@@ -1016,7 +1014,7 @@ INSERT INTO AttendanceRecords (LessonSessionId,StudentId,Status,RecordedBy) VALU
 (@ls21+3,@sId01,N'PRESENT',@uT04),(@ls21+3,@sId02,N'PRESENT',@uT04),(@ls21+3,@sId03,N'PRESENT',@uT04),(@ls21+3,@sId04,N'PRESENT',@uT04),
 (@ls21+4,@sId01,N'PRESENT',@uT05),(@ls21+4,@sId02,N'EXCUSED',@uT05),(@ls21+4,@sId03,N'PRESENT',@uT05),(@ls21+4,@sId04,N'PRESENT',@uT05);
 
--- ── 12d. CURRENT WEEK SESSIONS (June 15-19, 2026) ─────────────
+-- â”€â”€ 12d. CURRENT WEEK SESSIONS (June 15-19, 2026) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 -- Today is June 16 (Tue). Mon=completed, Tue=in-progress, Wed-Fri=scheduled
 
 -- 10A1: Mon Jun 15 (MATH, LIT, ENG, PHY, CHEM) - all completed
@@ -1074,7 +1072,7 @@ INSERT INTO AttendanceRecords (LessonSessionId,StudentId,Status,RecordedBy) VALU
 (@lsW2_06,@sId01,N'PRESENT',@uT06),(@lsW2_06,@sId02,N'PRESENT',@uT06),(@lsW2_06,@sId03,N'PRESENT',@uT06),(@lsW2_06,@sId04,N'PRESENT',@uT06),
 (@lsW2_06+1,@sId01,N'PRESENT',@uT07),(@lsW2_06+1,@sId02,N'LATE',@uT07),(@lsW2_06+1,@sId03,N'PRESENT',@uT07),(@lsW2_06+1,@sId04,N'PRESENT',@uT07);
 
--- ── 13. SKILL AREAS ───────────────────────────────────────────
+-- â”€â”€ 13. SKILL AREAS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 INSERT INTO SkillAreas (SubjectId,Code,Name) VALUES
 (@subMath,N'MATH_ALG', N'Algebra and Functions'),
 (@subMath,N'MATH_GEOM',N'Geometry and Measurement'),
@@ -1087,11 +1085,11 @@ INSERT INTO SkillAreas (SubjectId,Code,Name) VALUES
 (@subPhy, N'PHY_MECH', N'Mechanics'),
 (@subPhy, N'PHY_ELEC', N'Electricity and Magnetism');
 
--- ── 14. ASSESSMENTS & MARKS ───────────────────────────────────
+-- â”€â”€ 14. ASSESSMENTS & MARKS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 -- 3 subjects x 3 types x 4 classes = 36 assessments | 4 students each = 144 marks
 -- Insert one assessment then immediately insert its marks (uses SCOPE_IDENTITY)
 
--- ===== 10A1 – MATH =====
+-- ===== 10A1 â€“ MATH =====
 INSERT INTO Assessments(ClassId,SubjectId,TeacherId,SemesterId,AssessmentTypeId,Title,AssessmentDate,MaxScore,Weight,Status)
 VALUES(@c10A1,@subMath,@tId01,@sem1,@atQuiz,N'Math Quiz 1',    '2025-10-05',10,0.10,N'COMPLETED');
 DECLARE @a10A1_MQ INT = SCOPE_IDENTITY();
@@ -1113,7 +1111,7 @@ INSERT INTO StudentMarks(AssessmentId,StudentId,Score,TeacherComment,GradedBy) V
 (@a10A1_MF,@sId01,8.0,N'Well done.',@tId01),(@a10A1_MF,@sId02,8.5,N'Excellent.',@tId01),
 (@a10A1_MF,@sId03,7.5,N'Good progress.',@tId01),(@a10A1_MF,@sId04,8.0,N'Good.',@tId01);
 
--- ===== 10A1 – LIT =====
+-- ===== 10A1 â€“ LIT =====
 INSERT INTO Assessments(ClassId,SubjectId,TeacherId,SemesterId,AssessmentTypeId,Title,AssessmentDate,MaxScore,Weight,Status)
 VALUES(@c10A1,@subLit,@tId02,@sem1,@atQuiz, N'Lit Quiz 1',      '2025-10-07',10,0.10,N'COMPLETED');
 DECLARE @a10A1_LQ INT = SCOPE_IDENTITY();
@@ -1135,7 +1133,7 @@ INSERT INTO StudentMarks(AssessmentId,StudentId,Score,TeacherComment,GradedBy) V
 (@a10A1_LF,@sId01,8.5,N'Excellent essay.',@tId02),(@a10A1_LF,@sId02,9.0,N'Outstanding!',@tId02),
 (@a10A1_LF,@sId03,8.0,N'Well done.',@tId02),       (@a10A1_LF,@sId04,7.5,N'Good effort.',@tId02);
 
--- ===== 10A1 – ENG =====
+-- ===== 10A1 â€“ ENG =====
 INSERT INTO Assessments(ClassId,SubjectId,TeacherId,SemesterId,AssessmentTypeId,Title,AssessmentDate,MaxScore,Weight,Status)
 VALUES(@c10A1,@subEng,@tId03,@sem1,@atQuiz, N'English Quiz 1',      '2025-10-09',10,0.10,N'COMPLETED');
 DECLARE @a10A1_EQ INT = SCOPE_IDENTITY();
@@ -1157,7 +1155,7 @@ INSERT INTO StudentMarks(AssessmentId,StudentId,Score,TeacherComment,GradedBy) V
 (@a10A1_EF,@sId01,7.5,N'Good improvement.',@tId03),(@a10A1_EF,@sId02,8.5,N'Excellent.',@tId03),
 (@a10A1_EF,@sId03,8.0,N'Very good.',@tId03),        (@a10A1_EF,@sId04,7.0,N'Good effort.',@tId03);
 
--- ===== 10A2 – MATH =====
+-- ===== 10A2 â€“ MATH =====
 INSERT INTO Assessments(ClassId,SubjectId,TeacherId,SemesterId,AssessmentTypeId,Title,AssessmentDate,MaxScore,Weight,Status)
 VALUES(@c10A2,@subMath,@tId01,@sem1,@atQuiz, N'Math Quiz 1',    '2025-10-06',10,0.10,N'COMPLETED');
 DECLARE @a10A2_MQ INT = SCOPE_IDENTITY();
@@ -1179,7 +1177,7 @@ INSERT INTO StudentMarks(AssessmentId,StudentId,Score,TeacherComment,GradedBy) V
 (@a10A2_MF,@sId05,8.0,N'Solid.',@tId01),(@a10A2_MF,@sId06,7.5,N'Good.',@tId01),
 (@a10A2_MF,@sId07,6.5,N'Improved.',@tId01),(@a10A2_MF,@sId08,9.0,N'Outstanding!',@tId01);
 
--- ===== 10A2 – LIT =====
+-- ===== 10A2 â€“ LIT =====
 INSERT INTO Assessments(ClassId,SubjectId,TeacherId,SemesterId,AssessmentTypeId,Title,AssessmentDate,MaxScore,Weight,Status)
 VALUES(@c10A2,@subLit,@tId02,@sem1,@atQuiz, N'Lit Quiz 1',      '2025-10-08',10,0.10,N'COMPLETED');
 DECLARE @a10A2_LQ INT = SCOPE_IDENTITY();
@@ -1201,7 +1199,7 @@ INSERT INTO StudentMarks(AssessmentId,StudentId,Score,TeacherComment,GradedBy) V
 (@a10A2_LF,@sId05,7.5,N'Good.',@tId02),(@a10A2_LF,@sId06,8.0,N'Very good.',@tId02),
 (@a10A2_LF,@sId07,7.0,N'Satisfactory.',@tId02),(@a10A2_LF,@sId08,8.5,N'Excellent.',@tId02);
 
--- ===== 10A2 – ENG =====
+-- ===== 10A2 â€“ ENG =====
 INSERT INTO Assessments(ClassId,SubjectId,TeacherId,SemesterId,AssessmentTypeId,Title,AssessmentDate,MaxScore,Weight,Status)
 VALUES(@c10A2,@subEng,@tId03,@sem1,@atQuiz, N'English Quiz 1',      '2025-10-10',10,0.10,N'COMPLETED');
 DECLARE @a10A2_EQ INT = SCOPE_IDENTITY();
@@ -1223,7 +1221,7 @@ INSERT INTO StudentMarks(AssessmentId,StudentId,Score,TeacherComment,GradedBy) V
 (@a10A2_EF,@sId05,9.0,N'Outstanding!',@tId03),(@a10A2_EF,@sId06,7.5,N'Good.',@tId03),
 (@a10A2_EF,@sId07,6.0,N'Good improvement.',@tId03),(@a10A2_EF,@sId08,8.0,N'Very good.',@tId03);
 
--- ===== 11A1 – MATH =====
+-- ===== 11A1 â€“ MATH =====
 INSERT INTO Assessments(ClassId,SubjectId,TeacherId,SemesterId,AssessmentTypeId,Title,AssessmentDate,MaxScore,Weight,Status)
 VALUES(@c11A1,@subMath,@tId01,@sem1,@atQuiz, N'Math Quiz 1',    '2025-10-05',10,0.10,N'COMPLETED');
 DECLARE @a11A1_MQ INT = SCOPE_IDENTITY();
@@ -1245,7 +1243,7 @@ INSERT INTO StudentMarks(AssessmentId,StudentId,Score,TeacherComment,GradedBy) V
 (@a11A1_MF,@sId09,9.0,N'Top student.',@tId01),(@a11A1_MF,@sId10,8.0,N'Well done.',@tId01),
 (@a11A1_MF,@sId11,7.5,N'Good.',@tId01),(@a11A1_MF,@sId12,7.0,N'Keep improving.',@tId01);
 
--- ===== 11A1 – LIT =====
+-- ===== 11A1 â€“ LIT =====
 INSERT INTO Assessments(ClassId,SubjectId,TeacherId,SemesterId,AssessmentTypeId,Title,AssessmentDate,MaxScore,Weight,Status)
 VALUES(@c11A1,@subLit,@tId02,@sem1,@atQuiz, N'Lit Quiz 1',      '2025-10-07',10,0.10,N'COMPLETED');
 DECLARE @a11A1_LQ INT = SCOPE_IDENTITY();
@@ -1267,7 +1265,7 @@ INSERT INTO StudentMarks(AssessmentId,StudentId,Score,TeacherComment,GradedBy) V
 (@a11A1_LF,@sId09,8.0,N'Well done.',@tId02),(@a11A1_LF,@sId10,8.5,N'Very good.',@tId02),
 (@a11A1_LF,@sId11,9.0,N'Outstanding!',@tId02),(@a11A1_LF,@sId12,7.5,N'Good.',@tId02);
 
--- ===== 11A1 – ENG =====
+-- ===== 11A1 â€“ ENG =====
 INSERT INTO Assessments(ClassId,SubjectId,TeacherId,SemesterId,AssessmentTypeId,Title,AssessmentDate,MaxScore,Weight,Status)
 VALUES(@c11A1,@subEng,@tId03,@sem1,@atQuiz, N'English Quiz 1',      '2025-10-09',10,0.10,N'COMPLETED');
 DECLARE @a11A1_EQ INT = SCOPE_IDENTITY();
@@ -1289,7 +1287,7 @@ INSERT INTO StudentMarks(AssessmentId,StudentId,Score,TeacherComment,GradedBy) V
 (@a11A1_EF,@sId09,8.5,N'Excellent.',@tId03),(@a11A1_EF,@sId10,7.5,N'Good.',@tId03),
 (@a11A1_EF,@sId11,8.0,N'Very good.',@tId03),(@a11A1_EF,@sId12,7.0,N'Good effort.',@tId03);
 
--- ===== 11A2 – MATH =====
+-- ===== 11A2 â€“ MATH =====
 INSERT INTO Assessments(ClassId,SubjectId,TeacherId,SemesterId,AssessmentTypeId,Title,AssessmentDate,MaxScore,Weight,Status)
 VALUES(@c11A2,@subMath,@tId01,@sem1,@atQuiz, N'Math Quiz 1',    '2025-10-06',10,0.10,N'COMPLETED');
 DECLARE @a11A2_MQ INT = SCOPE_IDENTITY();
@@ -1311,7 +1309,7 @@ INSERT INTO StudentMarks(AssessmentId,StudentId,Score,TeacherComment,GradedBy) V
 (@a11A2_MF,@sId13,8.0,N'Solid.',@tId01),(@a11A2_MF,@sId14,9.0,N'Outstanding!',@tId01),
 (@a11A2_MF,@sId15,6.5,N'Improved.',@tId01),(@a11A2_MF,@sId16,8.5,N'Excellent.',@tId01);
 
--- ===== 11A2 – LIT =====
+-- ===== 11A2 â€“ LIT =====
 INSERT INTO Assessments(ClassId,SubjectId,TeacherId,SemesterId,AssessmentTypeId,Title,AssessmentDate,MaxScore,Weight,Status)
 VALUES(@c11A2,@subLit,@tId02,@sem1,@atQuiz, N'Lit Quiz 1',      '2025-10-08',10,0.10,N'COMPLETED');
 DECLARE @a11A2_LQ INT = SCOPE_IDENTITY();
@@ -1333,7 +1331,7 @@ INSERT INTO StudentMarks(AssessmentId,StudentId,Score,TeacherComment,GradedBy) V
 (@a11A2_LF,@sId13,9.0,N'Outstanding!',@tId02),(@a11A2_LF,@sId14,8.0,N'Good.',@tId02),
 (@a11A2_LF,@sId15,6.5,N'Decent effort.',@tId02),(@a11A2_LF,@sId16,8.5,N'Excellent.',@tId02);
 
--- ===== 11A2 – ENG =====
+-- ===== 11A2 â€“ ENG =====
 INSERT INTO Assessments(ClassId,SubjectId,TeacherId,SemesterId,AssessmentTypeId,Title,AssessmentDate,MaxScore,Weight,Status)
 VALUES(@c11A2,@subEng,@tId03,@sem1,@atQuiz, N'English Quiz 1',      '2025-10-10',10,0.10,N'COMPLETED');
 DECLARE @a11A2_EQ INT = SCOPE_IDENTITY();
@@ -1355,7 +1353,7 @@ INSERT INTO StudentMarks(AssessmentId,StudentId,Score,TeacherComment,GradedBy) V
 (@a11A2_EF,@sId13,7.5,N'Good improvement.',@tId03),(@a11A2_EF,@sId14,8.5,N'Excellent.',@tId03),
 (@a11A2_EF,@sId15,6.0,N'Keep practicing.',@tId03),  (@a11A2_EF,@sId16,7.5,N'Good.',@tId03);
 
--- ── 15. STUDY RESOURCES ───────────────────────────────────────
+-- â”€â”€ 15. STUDY RESOURCES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 INSERT INTO StudyResources(SubjectId,ClassId,UploadedBy,Title,Description,ResourceType,FileUrl,Visibility,CreatedAt) VALUES
 (@subMath,@c10A1,@uT01,N'Math Ch.1 - Functions Notes',   N'Lecture notes: domain, range, composition.',         N'PDF',     N'https://files.estudiez.edu.vn/math/ch1-functions.pdf',     N'CLASS_ONLY',SYSDATETIME()),
 (@subMath,@c10A1,@uT01,N'Quadratic Practice Set',         N'50 exercises with worked solutions.',                N'PDF',     N'https://files.estudiez.edu.vn/math/quadratic-practice.pdf',N'CLASS_ONLY',SYSDATETIME()),
@@ -1376,7 +1374,7 @@ INSERT INTO StudyResources(SubjectId,ClassId,UploadedBy,Title,Description,Resour
 (@subCs,  @c10A1,@uT09,N'Scratch Programming Basics',     N'Visual programming for beginners.',                  N'LINK',    N'https://scratch.mit.edu',                                   N'CLASS_ONLY',SYSDATETIME()),
 (@subCs,  @c11A1,@uT09,N'Python Introduction',            N'Variables, loops, functions intro.',                 N'PDF',     N'https://files.estudiez.edu.vn/cs/python-intro.pdf',        N'CLASS_ONLY',SYSDATETIME());
 
--- ── 16. CHAT GROUPS (4 classes x 2 types = 8) ────────────────
+-- â”€â”€ 16. CHAT GROUPS (4 classes x 2 types = 8) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 INSERT INTO ChatGroups(ClassId,SchoolYearId,GroupType,Name,CreatedAt)
     VALUES(@c10A1,@syId,N'STUDENT_TEACHER',N'10A1 - Students & Teacher Chat',SYSDATETIME());
 DECLARE @cg1 INT = SCOPE_IDENTITY();
@@ -1431,7 +1429,7 @@ INSERT INTO ChatMessages(ChatGroupId,SenderUserId,MessageText,CreatedAt) VALUES
 (@cg7,@uS14,N'Teacher, what topic should we prepare?',                        DATEADD(DAY,-5,SYSDATETIME())),
 (@cg7,@uT03,N'Topic: "Technology in everyday life". Prepare 3-4 minutes.',    DATEADD(DAY,-4,SYSDATETIME()));
 
--- ── 17. NOTIFICATIONS ─────────────────────────────────────────
+-- â”€â”€ 17. NOTIFICATIONS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 INSERT INTO Notifications(SenderUserId,Title,Content,Category,TargetType,TargetId,CreatedAt) VALUES
 (@uAdmin,N'Welcome to eStudiez 2025-2026',
     N'The school portal is now open for the new academic year. Students and parents can view timetables, results, and resources.',
@@ -1458,7 +1456,7 @@ INSERT INTO Notifications(SenderUserId,Title,Content,Category,TargetType,TargetI
     N'Register your team for football, volleyball, badminton and athletics by 25 November 2025 at the PE office.',
     N'EVENT',N'STUDENT',NULL,DATEADD(DAY,-30,SYSDATETIME()));
 
--- ── 18. NEWS POSTS ────────────────────────────────────────────
+-- â”€â”€ 18. NEWS POSTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 INSERT INTO NewsPosts(AuthorUserId,Category,Title,Slug,Content,Status,PublishedAt,CreatedAt,UpdatedAt) VALUES
 (@uAdmin,N'ANNOUNCEMENT',N'Welcome to the 2025-2026 Academic Year',N'welcome-2025-2026',
 N'Dear students, parents, and teachers,
@@ -1574,7 +1572,7 @@ Literature:
 Students may borrow up to 3 books for 2 weeks. Visit the library during recess or after school.',
 N'PUBLISHED',DATEADD(DAY,-5,SYSDATETIME()),DATEADD(DAY,-5,SYSDATETIME()),DATEADD(DAY,-5,SYSDATETIME()));
 
--- ── 19. REGISTRATION REQUESTS ─────────────────────────────────
+-- â”€â”€ 19. REGISTRATION REQUESTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 INSERT INTO RegistrationRequests(FullName,Email,Phone,RoleRequested,Message,Status,ReviewedBy,ReviewNotes,ReviewedAt,CreatedAt) VALUES
 (N'Do Thi Thuy',     N'thuy.dt@gmail.com', N'0988001001',N'student',N'I would like my daughter to enroll in Grade 10 for 2025-2026.',N'PENDING', NULL,      NULL,                         NULL,                          DATEADD(DAY,-15,SYSDATETIME())),
 (N'Bui Van Hung',    N'hung.bv@gmail.com', N'0988001002',N'parent', N'I am the parent of Bui Thi Nhi. I want to register as a parent.',N'PENDING',NULL,      NULL,                         NULL,                          DATEADD(DAY,-12,SYSDATETIME())),
@@ -1582,7 +1580,7 @@ INSERT INTO RegistrationRequests(FullName,Email,Phone,RoleRequested,Message,Stat
 (N'Nguyen Phuoc Loc',N'loc.np@gmail.com',  N'0988001004',N'student',N'Transfer student from Da Nang, Grade 11. Documents attached.',  N'PENDING', NULL,      NULL,                         NULL,                          DATEADD(DAY,-5,SYSDATETIME())),
 (N'Pham Thi Hanh',   N'hanh.pt@gmail.com', N'0988001005',N'teacher',N'Biology teacher applying for advertised position.',             N'REJECTED',@uAdmin,N'Position already filled.',  DATEADD(DAY,-3,SYSDATETIME()), DATEADD(DAY,-7,SYSDATETIME()));
 
--- ── 20. FEEDBACK TICKETS ──────────────────────────────────────
+-- â”€â”€ 20. FEEDBACK TICKETS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 INSERT INTO FeedbackTickets(SenderUserId,RelatedStudentId,Category,Subject,Content,Status,HandledBy,HandledAt,AdminResponse,CreatedAt) VALUES
 (@uP01,@sId01,N'ACADEMIC',N'Math quiz retake policy',
     N'My son Pham Quoc Bao missed Math Quiz 1 due to fever. Is there a retake policy?',
@@ -1598,7 +1596,7 @@ INSERT INTO FeedbackTickets(SenderUserId,RelatedStudentId,Category,Subject,Conte
     N'OPEN',NULL,NULL,NULL,
     DATEADD(DAY,-2,SYSDATETIME()));
 
--- ── DONE ──────────────────────────────────────────────────────
+-- â”€â”€ DONE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 PRINT N'';
 PRINT N'=======================================================';
 PRINT N'  eStudiez seed completed!';
@@ -1613,5 +1611,587 @@ PRINT N'  admin          / Admin@123';
 PRINT N'  teacher.math   / Teacher@123   (all 10 teachers)';
 PRINT N'  bao.pq         / Student@123   (all 16 students)';
 PRINT N'  parent.bao     / Parent@123    (all 16 parents)';
+PRINT N'=======================================================';
+GO
+
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+--  SECTION 18 â€” ADD STUDENT GRADE MANAGEMENT SUPPORT
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+USE eStudentDB;
+GO
+
+-- Add current_grade column to Students table if it doesn't exist
+IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'Students' AND COLUMN_NAME = 'current_grade')
+BEGIN
+    ALTER TABLE Students ADD current_grade INT NULL;
+    PRINT N'âœ“ Added current_grade column to Students';
+END
+GO
+
+-- Create StudentGradeProgressions table if it doesn't exist
+IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'StudentGradeProgressions')
+BEGIN
+    CREATE TABLE StudentGradeProgressions (
+        progression_id INT PRIMARY KEY IDENTITY(1,1),
+        student_id UNIQUEIDENTIFIER NOT NULL,
+        school_year_id INT NOT NULL,
+        previous_grade INT NULL,
+        new_grade INT NOT NULL,
+        reason NVARCHAR(100),
+        progressed_at DATETIME2 NOT NULL DEFAULT GETDATE(),
+        FOREIGN KEY (student_id) REFERENCES Students(StudentId),
+        FOREIGN KEY (school_year_id) REFERENCES SchoolYears(SchoolYearId)
+    );
+    
+    CREATE INDEX idx_student_current_grade ON Students(current_grade);
+    CREATE INDEX idx_progression_student_id ON StudentGradeProgressions(student_id);
+    CREATE INDEX idx_progression_school_year_id ON StudentGradeProgressions(school_year_id);
+    
+    PRINT N'âœ“ Created StudentGradeProgressions table with indexes';
+END
+GO
+
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+--  SECTION 19 â€” UPDATE EXISTING STUDENTS WITH GRADE LEVELS
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+DECLARE @syId INT = (SELECT SchoolYearId FROM SchoolYears WHERE Name = N'2025-2026');
+
+-- Assign grades to existing students based on class enrollment
+UPDATE Students SET current_grade = 10 
+WHERE StudentId IN (
+    SELECT DISTINCT s.StudentId FROM Students s
+    INNER JOIN ClassEnrollments ce ON s.StudentId = ce.StudentId
+    INNER JOIN Classes c ON ce.ClassId = c.ClassId
+    WHERE c.Name IN (N'10A1', N'10A2') AND c.SchoolYearId = @syId
+);
+
+UPDATE Students SET current_grade = 11
+WHERE StudentId IN (
+    SELECT DISTINCT s.StudentId FROM Students s
+    INNER JOIN ClassEnrollments ce ON s.StudentId = ce.StudentId
+    INNER JOIN Classes c ON ce.ClassId = c.ClassId
+    WHERE c.Name IN (N'11A1', N'11A2') AND c.SchoolYearId = @syId
+);
+
+PRINT N'âœ“ Updated students with grade levels';
+GO
+
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+--  SECTION 20 â€” INSERT GRADE PROGRESSION HISTORY
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+DECLARE @syId INT = (SELECT SchoolYearId FROM SchoolYears WHERE Name = N'2025-2026');
+
+INSERT INTO StudentGradeProgressions (student_id, school_year_id, previous_grade, new_grade, reason, progressed_at)
+SELECT 
+    s.StudentId,
+    @syId,
+    CASE 
+        WHEN s.current_grade = 10 THEN 9
+        WHEN s.current_grade = 11 THEN 10
+    END,
+    s.current_grade,
+    N'YEAR_END_PROMOTION',
+    DATEADD(YEAR, -1, GETDATE())
+FROM Students s
+WHERE s.current_grade IN (10, 11);
+
+PRINT N'âœ“ Added grade progression history';
+GO
+
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+--  FINAL SUMMARY
+-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+PRINT N'';
+PRINT N'========================================';
+PRINT N'STUDENT GRADE MANAGEMENT ENABLED!';
+PRINT N'========================================';
+PRINT N'';
+PRINT N'NEW FEATURES:';
+PRINT N'âœ“ Student Grade Fields (10, 11, 12)';
+PRINT N'âœ“ Grade Progression Tracking';
+PRINT N'âœ“ Graduated Student Status';
+PRINT N'âœ“ Pending Grade Assignment';
+PRINT N'';
+PRINT N'ADMIN API ENDPOINTS:';
+PRINT N'POST   /api/admin/grade-management/promote-all-for-year';
+PRINT N'PUT    /api/admin/grade-management/assign-grade/{id}';
+PRINT N'PUT    /api/admin/grade-management/mark-as-graduated/{id}';
+PRINT N'GET    /api/students/by-grade/{grade}';
+PRINT N'GET    /api/students/{id}/grade-history';
+PRINT N'';
+PRINT N'READY FOR PRODUCTION!';
+PRINT N'========================================';
+GO
+
+
+-- ══════════════════════════════════════════════════════════════
+--  SECTION 21 — EXPANDED TEST DATA (150 Students + 90 Parents)
+--  Active: 90 students (10 per class × 9 classes across 3 grades)
+--  Graduated: 30 students (GRADUATED status)
+--  New Hire: 30 students (PENDING_GRADE_ASSIGNMENT)
+-- ══════════════════════════════════════════════════════════════
+USE eStudentDB;
+GO
+
+-- Declare hashes and variables
+DECLARE @HASH_STUDENT NVARCHAR(255) = N'$2b$10$vac65OsMh8nWqPJNA..dq.bT91e7FyCCil3AbS22694qSbE32TAUW';
+DECLARE @HASH_PARENT NVARCHAR(255) = N'$2b$10$8Rr5QEk2f2uewpCgjr6.Q.WtzMc5wqs60mDk6iVH/JyDmWdfIYlLG';
+DECLARE @rStudent INT = (SELECT RoleId FROM Roles WHERE Code = N'STUDENT');
+DECLARE @rParent INT = (SELECT RoleId FROM Roles WHERE Code = N'PARENT');
+DECLARE @syId INT = (SELECT SchoolYearId FROM SchoolYears WHERE Name = N'2025-2026');
+DECLARE @g10 INT = (SELECT GradeId FROM Grades WHERE Code = N'G10');
+DECLARE @g11 INT = (SELECT GradeId FROM Grades WHERE Code = N'G11');
+DECLARE @g12 INT = (SELECT GradeId FROM Grades WHERE Code = N'G12');
+DECLARE @tId01 UNIQUEIDENTIFIER = (SELECT TeacherId FROM Teachers t 
+    INNER JOIN Subjects s ON t.SubjectId = s.SubjectId WHERE s.Code = N'MATH');
+DECLARE @tId02 UNIQUEIDENTIFIER = (SELECT TeacherId FROM Teachers t 
+    INNER JOIN Subjects s ON t.SubjectId = s.SubjectId WHERE s.Code = N'LIT');
+DECLARE @tId03 UNIQUEIDENTIFIER = (SELECT TeacherId FROM Teachers t 
+    INNER JOIN Subjects s ON t.SubjectId = s.SubjectId WHERE s.Code = N'ENG');
+DECLARE @tId04 UNIQUEIDENTIFIER = (SELECT TeacherId FROM Teachers t 
+    INNER JOIN Subjects s ON t.SubjectId = s.SubjectId WHERE s.Code = N'PHY');
+
+-- Ensure Grade 12 exists
+IF NOT EXISTS (SELECT 1 FROM Grades WHERE Code = N'G12')
+BEGIN
+    INSERT INTO Grades (Code, Name) VALUES (N'G12', N'Grade 12');
+    SET @g12 = (SELECT GradeId FROM Grades WHERE Code = N'G12');
+END
+
+-- Create new classes
+INSERT INTO Classes (SchoolYearId, GradeId, Name, HomeroomTeacherId, TrainingProgram, Room, IsActive)
+SELECT @syId, @g10, N'10A3', @tId01, N'REGULAR', N'103', 1
+WHERE NOT EXISTS (SELECT 1 FROM Classes WHERE Name = N'10A3' AND SchoolYearId = @syId);
+
+INSERT INTO Classes (SchoolYearId, GradeId, Name, HomeroomTeacherId, TrainingProgram, Room, IsActive)
+SELECT @syId, @g11, N'11A3', @tId02, N'REGULAR', N'203', 1
+WHERE NOT EXISTS (SELECT 1 FROM Classes WHERE Name = N'11A3' AND SchoolYearId = @syId);
+
+INSERT INTO Classes (SchoolYearId, GradeId, Name, HomeroomTeacherId, TrainingProgram, Room, IsActive)
+SELECT @syId, @g12, N'12A1', @tId03, N'REGULAR', N'301', 1
+WHERE NOT EXISTS (SELECT 1 FROM Classes WHERE Name = N'12A1' AND SchoolYearId = @syId);
+
+INSERT INTO Classes (SchoolYearId, GradeId, Name, HomeroomTeacherId, TrainingProgram, Room, IsActive)
+SELECT @syId, @g12, N'12A2', @tId04, N'REGULAR', N'302', 1
+WHERE NOT EXISTS (SELECT 1 FROM Classes WHERE Name = N'12A2' AND SchoolYearId = @syId);
+
+INSERT INTO Classes (SchoolYearId, GradeId, Name, HomeroomTeacherId, TrainingProgram, Room, IsActive)
+SELECT @syId, @g12, N'12A3', @tId01, N'REGULAR', N'303', 1
+WHERE NOT EXISTS (SELECT 1 FROM Classes WHERE Name = N'12A3' AND SchoolYearId = @syId);
+
+DECLARE @c10A1 INT = (SELECT ClassId FROM Classes WHERE Name = N'10A1' AND SchoolYearId = @syId);
+DECLARE @c10A2 INT = (SELECT ClassId FROM Classes WHERE Name = N'10A2' AND SchoolYearId = @syId);
+DECLARE @c10A3 INT = (SELECT ClassId FROM Classes WHERE Name = N'10A3' AND SchoolYearId = @syId);
+DECLARE @c11A1 INT = (SELECT ClassId FROM Classes WHERE Name = N'11A1' AND SchoolYearId = @syId);
+DECLARE @c11A2 INT = (SELECT ClassId FROM Classes WHERE Name = N'11A2' AND SchoolYearId = @syId);
+DECLARE @c11A3 INT = (SELECT ClassId FROM Classes WHERE Name = N'11A3' AND SchoolYearId = @syId);
+DECLARE @c12A1 INT = (SELECT ClassId FROM Classes WHERE Name = N'12A1' AND SchoolYearId = @syId);
+DECLARE @c12A2 INT = (SELECT ClassId FROM Classes WHERE Name = N'12A2' AND SchoolYearId = @syId);
+DECLARE @c12A3 INT = (SELECT ClassId FROM Classes WHERE Name = N'12A3' AND SchoolYearId = @syId);
+
+PRINT N'✓ Created 5 new classes (10A3, 11A3, 12A1, 12A2, 12A3)';
+GO
+
+-- ──────────────────────────────────────────────────────────────────────────────
+--  SECTION 19 – EXPANDED STUDENT & PARENT DATA (idempotent)
+--  Safe to rerun without duplicate key errors.
+-- ──────────────────────────────────────────────────────────────────────────────
+
+DECLARE @rStudent INT = (SELECT RoleId FROM Roles WHERE Code = N'STUDENT');
+DECLARE @rParent  INT = (SELECT RoleId FROM Roles WHERE Code = N'PARENT');
+DECLARE @g10Id INT = (SELECT GradeId FROM Grades WHERE Code = N'G10');
+DECLARE @g11Id INT = (SELECT GradeId FROM Grades WHERE Code = N'G11');
+DECLARE @g12Id INT = (SELECT GradeId FROM Grades WHERE Code = N'G12');
+DECLARE @syYear INT = (SELECT TOP 1 SchoolYearId FROM SchoolYears ORDER BY SchoolYearId DESC);
+DECLARE @today DATE = CAST(GETDATE() AS DATE);
+
+IF NOT EXISTS (SELECT 1 FROM Classes WHERE Name = N'10A3' AND SchoolYearId = @syYear)
+    INSERT INTO Classes (SchoolYearId, GradeId, Name, TrainingProgram, IsActive)
+    VALUES (@syYear, @g10Id, N'10A3', N'REGULAR', 1);
+IF NOT EXISTS (SELECT 1 FROM Classes WHERE Name = N'11A3' AND SchoolYearId = @syYear)
+    INSERT INTO Classes (SchoolYearId, GradeId, Name, TrainingProgram, IsActive)
+    VALUES (@syYear, @g11Id, N'11A3', N'REGULAR', 1);
+IF NOT EXISTS (SELECT 1 FROM Classes WHERE Name = N'12A1' AND SchoolYearId = @syYear)
+    INSERT INTO Classes (SchoolYearId, GradeId, Name, TrainingProgram, IsActive)
+    VALUES (@syYear, @g12Id, N'12A1', N'REGULAR', 1);
+IF NOT EXISTS (SELECT 1 FROM Classes WHERE Name = N'12A2' AND SchoolYearId = @syYear)
+    INSERT INTO Classes (SchoolYearId, GradeId, Name, TrainingProgram, IsActive)
+    VALUES (@syYear, @g12Id, N'12A2', N'REGULAR', 1);
+IF NOT EXISTS (SELECT 1 FROM Classes WHERE Name = N'12A3' AND SchoolYearId = @syYear)
+    INSERT INTO Classes (SchoolYearId, GradeId, Name, TrainingProgram, IsActive)
+    VALUES (@syYear, @g12Id, N'12A3', N'REGULAR', 1);
+
+PRINT N'Added missing classes';
+
+DECLARE @i INT = 1;
+DECLARE @studentUsername NVARCHAR(80);
+DECLARE @studentEmail NVARCHAR(150);
+DECLARE @studentFullName NVARCHAR(150);
+DECLARE @studentCode NVARCHAR(50);
+DECLARE @studentStatus NVARCHAR(30);
+DECLARE @studentGrade INT;
+DECLARE @studentGender NVARCHAR(20);
+DECLARE @studentAddress NVARCHAR(MAX);
+DECLARE @studentDob DATE;
+DECLARE @studentAdmissionDate DATE;
+DECLARE @parentUsername NVARCHAR(80);
+DECLARE @parentEmail NVARCHAR(150);
+DECLARE @parentFullName NVARCHAR(150);
+DECLARE @parentOccupation NVARCHAR(120);
+DECLARE @parentAddress NVARCHAR(MAX);
+DECLARE @parentRelationship NVARCHAR(50);
+DECLARE @studentUserId UNIQUEIDENTIFIER;
+DECLARE @parentUserId UNIQUEIDENTIFIER;
+DECLARE @studentId UNIQUEIDENTIFIER;
+DECLARE @parentId UNIQUEIDENTIFIER;
+DECLARE @familyName NVARCHAR(50);
+DECLARE @middleName NVARCHAR(50);
+DECLARE @givenName NVARCHAR(50);
+DECLARE @parentMiddleName NVARCHAR(50);
+DECLARE @parentGivenName NVARCHAR(50);
+
+WHILE @i <= 170
+BEGIN
+    SET @familyName = CHOOSE(((@i - 1) % 15) + 1,
+        N'Nguyen', N'Tran', N'Le', N'Pham', N'Hoang',
+        N'Phan', N'Vu', N'Dang', N'Bui', N'Do',
+        N'Ho', N'Ngo', N'Duong', N'Ly', N'Trinh');
+
+    SET @studentGender = CASE WHEN @i % 2 = 0 THEN N'Female' ELSE N'Male' END;
+
+    IF @studentGender = N'Male'
+    BEGIN
+        SET @middleName = CHOOSE(((@i - 1) % 10) + 1,
+            N'Van', N'Huu', N'Duc', N'Quoc', N'Gia',
+            N'Minh', N'Thanh', N'Anh', N'Bao', N'Tien');
+        SET @givenName = CHOOSE(((@i - 1) % 15) + 1,
+            N'An', N'Bao', N'Cuong', N'Dat', N'Duy',
+            N'Hieu', N'Hung', N'Khang', N'Long', N'Minh',
+            N'Nam', N'Phuc', N'Quan', N'Thanh', N'Tung');
+    END
+    ELSE
+    BEGIN
+        SET @middleName = CHOOSE(((@i - 1) % 10) + 1,
+            N'Thi', N'Ngoc', N'Minh', N'Bao', N'Thu',
+            N'Quynh', N'Thanh', N'Khanh', N'Bich', N'Dieu');
+        SET @givenName = CHOOSE(((@i - 1) % 15) + 1,
+            N'Anh', N'Chi', N'Dao', N'Giang', N'Hanh',
+            N'Huong', N'Lan', N'Linh', N'Mai', N'Ngoc',
+            N'Nhung', N'Phuong', N'Thao', N'Trang', N'Yen');
+    END;
+
+    SET @studentFullName = @familyName + N' ' + @middleName + N' ' + @givenName;
+
+    SET @studentAddress =
+        CAST(((@i * 7) % 220) + 1 AS NVARCHAR(10)) + N' ' +
+        CHOOSE(((@i - 1) % 10) + 1,
+            N'Nguyen Trai', N'Le Loi', N'Tran Hung Dao', N'Vo Thi Sau', N'Dien Bien Phu',
+            N'Phan Xich Long', N'Nguyen Van Cu', N'Ly Thuong Kiet', N'Cach Mang Thang 8', N'Ba Thang Hai') +
+        N', ' +
+        CHOOSE(((@i - 1) % 8) + 1,
+            N'District 1', N'District 3', N'District 5', N'District 7',
+            N'District 10', N'Binh Thanh', N'Phu Nhuan', N'Tan Binh') +
+        N', Ho Chi Minh City';
+
+    SET @parentMiddleName = CHOOSE(((@i + 2) % 6) + 1, N'Van', N'Thi', N'Ngoc', N'Duc', N'Thanh', N'Huu');
+    SET @parentGivenName = CHOOSE(((@i + 3) % 14) + 1,
+        N'Binh', N'Cuong', N'Dung', N'Hai', N'Hoa', N'Hung', N'Khanh',
+        N'Lan', N'Linh', N'Nam', N'Nga', N'Phuong', N'Thanh', N'Thu');
+    SET @parentFullName = @familyName + N' ' + @parentMiddleName + N' ' + @parentGivenName;
+
+    SET @parentOccupation = CHOOSE(((@i - 1) % 10) + 1,
+        N'Teacher', N'Engineer', N'Accountant', N'Nurse', N'Business Owner',
+        N'Doctor', N'Civil Servant', N'IT Specialist', N'Lawyer', N'Sales Manager');
+    SET @parentAddress = @studentAddress;
+    SET @parentRelationship = CASE WHEN @i % 2 = 0 THEN N'Mother' ELSE N'Father' END;
+
+    SET @parentUsername = N'parent.s' + RIGHT('000' + CAST(@i AS VARCHAR(3)), 3);
+    SET @parentEmail = @parentUsername + N'@estudiez.edu.vn';
+
+    IF @i <= 90
+    BEGIN
+        SET @studentUsername = N'student.s' + RIGHT('000' + CAST(@i AS VARCHAR(3)), 3);
+        SET @studentEmail = @studentUsername + N'@estudiez.edu.vn';
+        SET @studentCode = N'STU' + RIGHT('000' + CAST(@i AS VARCHAR(3)), 3);
+        SET @studentStatus = N'ACTIVE';
+        SET @studentGrade = CASE
+            WHEN @i BETWEEN 1 AND 30 THEN 10
+            WHEN @i BETWEEN 31 AND 60 THEN 11
+            ELSE 12
+        END;
+
+        SET @studentDob = CASE
+            WHEN @studentGrade = 10 THEN DATEFROMPARTS(2009, ((@i - 1) % 12) + 1, ((@i * 3) % 28) + 1)
+            WHEN @studentGrade = 11 THEN DATEFROMPARTS(2008, ((@i - 1) % 12) + 1, ((@i * 3) % 28) + 1)
+            ELSE DATEFROMPARTS(2007, ((@i - 1) % 12) + 1, ((@i * 3) % 28) + 1)
+        END;
+
+        SET @studentAdmissionDate = CASE
+            WHEN @studentGrade = 10 THEN DATEFROMPARTS(2025, 9, 1)
+            WHEN @studentGrade = 11 THEN DATEFROMPARTS(2024, 9, 1)
+            ELSE DATEFROMPARTS(2023, 9, 1)
+        END;
+    END
+    ELSE IF @i <= 120
+    BEGIN
+        SET @studentUsername = N'student.s' + RIGHT('000' + CAST(@i AS VARCHAR(3)), 3) + N'_g';
+        SET @studentEmail = @studentUsername + N'@estudiez.edu.vn';
+        SET @studentCode = N'STU' + RIGHT('000' + CAST(@i AS VARCHAR(3)), 3) + N'G';
+        SET @studentStatus = N'GRADUATED';
+        SET @studentGrade = 12;
+        SET @studentDob = DATEFROMPARTS(2007, ((@i - 1) % 12) + 1, ((@i * 3) % 28) + 1);
+        SET @studentAdmissionDate = DATEFROMPARTS(2023, 9, 1);
+    END
+    ELSE IF @i <= 150
+    BEGIN
+        SET @studentUsername = N'student.s' + RIGHT('000' + CAST(@i AS VARCHAR(3)), 3) + N'_p';
+        SET @studentEmail = @studentUsername + N'@estudiez.edu.vn';
+        SET @studentCode = N'STU' + RIGHT('000' + CAST(@i AS VARCHAR(3)), 3) + N'P';
+        SET @studentStatus = N'PENDING_GRADE_ASSIGNMENT';
+        SET @studentGrade = NULL;
+        SET @studentDob = DATEFROMPARTS(2010, ((@i - 1) % 12) + 1, ((@i * 3) % 28) + 1);
+        SET @studentAdmissionDate = DATEFROMPARTS(2026, 9, 1);
+    END
+    ELSE
+    BEGIN
+        -- Extra active Grade 10 students for 10A1 and 10A2
+        SET @studentUsername = N'student.s' + RIGHT('000' + CAST(@i AS VARCHAR(3)), 3);
+        SET @studentEmail = @studentUsername + N'@estudiez.edu.vn';
+        SET @studentCode = N'STU' + RIGHT('000' + CAST(@i AS VARCHAR(3)), 3);
+        SET @studentStatus = N'ACTIVE';
+        SET @studentGrade = 10;
+        SET @studentDob = DATEFROMPARTS(2009, ((@i - 1) % 12) + 1, ((@i * 3) % 28) + 1);
+        SET @studentAdmissionDate = DATEFROMPARTS(2025, 9, 1);
+    END;
+
+    IF NOT EXISTS (SELECT 1 FROM Users WHERE Username = @parentUsername)
+        INSERT INTO Users (UserId, RoleId, Username, PasswordHash, FullName, Email, Phone, IsActive)
+        VALUES (NEWID(), @rParent, @parentUsername, HASHBYTES('SHA2_256', N'Parent@123'),
+                @parentFullName, @parentEmail,
+                N'09' + RIGHT('00000000' + CAST(900000000 + @i AS VARCHAR(10)), 8), 1);
+
+    SELECT @parentUserId = UserId FROM Users WHERE Username = @parentUsername;
+
+    UPDATE Users
+    SET FullName = @parentFullName,
+        Email = @parentEmail,
+        Phone = N'09' + RIGHT('00000000' + CAST(900000000 + @i AS VARCHAR(10)), 8),
+        IsActive = 1
+    WHERE UserId = @parentUserId;
+
+    IF NOT EXISTS (SELECT 1 FROM Parents WHERE UserId = @parentUserId)
+        INSERT INTO Parents (ParentId, UserId, Occupation, Address, CreatedAt)
+        VALUES (NEWID(), @parentUserId, @parentOccupation, @parentAddress, SYSDATETIME());
+    ELSE
+        UPDATE Parents
+        SET Occupation = @parentOccupation,
+            Address = @parentAddress
+        WHERE UserId = @parentUserId;
+
+    SELECT @parentId = ParentId FROM Parents WHERE UserId = @parentUserId;
+
+    IF NOT EXISTS (SELECT 1 FROM Users WHERE Username = @studentUsername)
+        INSERT INTO Users (UserId, RoleId, Username, PasswordHash, FullName, Email, Phone, IsActive)
+        VALUES (NEWID(), @rStudent, @studentUsername, HASHBYTES('SHA2_256', N'Student@123'),
+                @studentFullName, @studentEmail,
+                N'08' + RIGHT('00000000' + CAST(900000000 + @i AS VARCHAR(10)), 8), 1);
+
+    SELECT @studentUserId = UserId FROM Users WHERE Username = @studentUsername;
+
+    UPDATE Users
+    SET FullName = @studentFullName,
+        Email = @studentEmail,
+        Phone = N'08' + RIGHT('00000000' + CAST(900000000 + @i AS VARCHAR(10)), 8),
+        IsActive = 1
+    WHERE UserId = @studentUserId;
+
+    IF NOT EXISTS (SELECT 1 FROM Students WHERE StudentCode = @studentCode)
+        INSERT INTO Students (StudentId, UserId, StudentCode, DateOfBirth, Gender, Address, AdmissionDate, Status, CurrentGrade, CreatedAt)
+        VALUES (NEWID(), @studentUserId, @studentCode, @studentDob, @studentGender, @studentAddress, @studentAdmissionDate, @studentStatus, @studentGrade, SYSDATETIME());
+    ELSE
+        UPDATE Students
+        SET UserId = @studentUserId,
+            DateOfBirth = @studentDob,
+            Gender = @studentGender,
+            Address = @studentAddress,
+            AdmissionDate = @studentAdmissionDate,
+            Status = @studentStatus,
+            CurrentGrade = @studentGrade
+        WHERE StudentCode = @studentCode;
+
+    SELECT @studentId = StudentId FROM Students WHERE StudentCode = @studentCode;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM StudentParentLinks
+        WHERE StudentId = @studentId AND ParentId = @parentId
+    )
+        INSERT INTO StudentParentLinks (StudentId, ParentId, Relationship, IsPrimaryContact)
+        VALUES (@studentId, @parentId, @parentRelationship, 1);
+    ELSE
+        UPDATE StudentParentLinks
+        SET Relationship = @parentRelationship,
+            IsPrimaryContact = 1
+        WHERE StudentId = @studentId AND ParentId = @parentId;
+
+    SET @i = @i + 1;
+END;
+
+PRINT N'Linking students to classes...';
+
+DECLARE @c10A1R INT = (SELECT ClassId FROM Classes WHERE Name = N'10A1' AND SchoolYearId = @syYear);
+DECLARE @c10A2R INT = (SELECT ClassId FROM Classes WHERE Name = N'10A2' AND SchoolYearId = @syYear);
+DECLARE @c10A3R INT = (SELECT ClassId FROM Classes WHERE Name = N'10A3' AND SchoolYearId = @syYear);
+DECLARE @c11A1R INT = (SELECT ClassId FROM Classes WHERE Name = N'11A1' AND SchoolYearId = @syYear);
+DECLARE @c11A2R INT = (SELECT ClassId FROM Classes WHERE Name = N'11A2' AND SchoolYearId = @syYear);
+DECLARE @c11A3R INT = (SELECT ClassId FROM Classes WHERE Name = N'11A3' AND SchoolYearId = @syYear);
+DECLARE @c12A1R INT = (SELECT ClassId FROM Classes WHERE Name = N'12A1' AND SchoolYearId = @syYear);
+DECLARE @c12A2R INT = (SELECT ClassId FROM Classes WHERE Name = N'12A2' AND SchoolYearId = @syYear);
+DECLARE @c12A3R INT = (SELECT ClassId FROM Classes WHERE Name = N'12A3' AND SchoolYearId = @syYear);
+
+-- Force-normalize the 90 active canonical students in case of partial/failed prior runs.
+UPDATE s
+SET s.Status = N'ACTIVE',
+        s.CurrentGrade = CASE
+                WHEN seq BETWEEN 1 AND 30 THEN 10
+                WHEN seq BETWEEN 31 AND 60 THEN 11
+                ELSE 12
+        END
+FROM Students s
+CROSS APPLY (SELECT TRY_CONVERT(INT, SUBSTRING(s.StudentCode, 4, 3)) AS seq) x
+WHERE s.StudentCode LIKE N'STU[0-9][0-9][0-9]'
+    AND (x.seq BETWEEN 1 AND 90 OR x.seq BETWEEN 151 AND 170);
+
+UPDATE s
+SET s.CurrentGrade = 10
+FROM Students s
+CROSS APPLY (SELECT TRY_CONVERT(INT, SUBSTRING(s.StudentCode, 4, 3)) AS seq) x
+WHERE s.StudentCode LIKE N'STU[0-9][0-9][0-9]'
+    AND x.seq BETWEEN 151 AND 170;
+
+DELETE ce
+FROM ClassEnrollments ce
+INNER JOIN Students s ON s.StudentId = ce.StudentId
+WHERE s.StudentCode LIKE N'STU[0-9][0-9][0-9]'
+    AND (TRY_CONVERT(INT, SUBSTRING(s.StudentCode, 4, 3)) BETWEEN 1 AND 90
+         OR TRY_CONVERT(INT, SUBSTRING(s.StudentCode, 4, 3)) BETWEEN 151 AND 170);
+
+-- Hardcoded class distribution (10 students per class)
+INSERT INTO ClassEnrollments (ClassId, StudentId, EnrolledAt, Status)
+SELECT @c10A1R, s.StudentId, @today, N'ACTIVE'
+FROM Students s
+WHERE TRY_CONVERT(INT, SUBSTRING(s.StudentCode, 4, 3)) BETWEEN 1 AND 10
+    AND s.StudentCode LIKE N'STU[0-9][0-9][0-9]'
+    AND s.Status = N'ACTIVE';
+
+INSERT INTO ClassEnrollments (ClassId, StudentId, EnrolledAt, Status)
+SELECT @c10A2R, s.StudentId, @today, N'ACTIVE'
+FROM Students s
+WHERE TRY_CONVERT(INT, SUBSTRING(s.StudentCode, 4, 3)) BETWEEN 11 AND 20
+    AND s.StudentCode LIKE N'STU[0-9][0-9][0-9]'
+    AND s.Status = N'ACTIVE';
+
+INSERT INTO ClassEnrollments (ClassId, StudentId, EnrolledAt, Status)
+SELECT @c10A3R, s.StudentId, @today, N'ACTIVE'
+FROM Students s
+WHERE TRY_CONVERT(INT, SUBSTRING(s.StudentCode, 4, 3)) BETWEEN 21 AND 30
+    AND s.StudentCode LIKE N'STU[0-9][0-9][0-9]'
+    AND s.Status = N'ACTIVE';
+
+INSERT INTO ClassEnrollments (ClassId, StudentId, EnrolledAt, Status)
+SELECT @c11A1R, s.StudentId, @today, N'ACTIVE'
+FROM Students s
+WHERE TRY_CONVERT(INT, SUBSTRING(s.StudentCode, 4, 3)) BETWEEN 31 AND 40
+    AND s.StudentCode LIKE N'STU[0-9][0-9][0-9]'
+    AND s.Status = N'ACTIVE';
+
+INSERT INTO ClassEnrollments (ClassId, StudentId, EnrolledAt, Status)
+SELECT @c11A2R, s.StudentId, @today, N'ACTIVE'
+FROM Students s
+WHERE TRY_CONVERT(INT, SUBSTRING(s.StudentCode, 4, 3)) BETWEEN 41 AND 50
+    AND s.StudentCode LIKE N'STU[0-9][0-9][0-9]'
+    AND s.Status = N'ACTIVE';
+
+INSERT INTO ClassEnrollments (ClassId, StudentId, EnrolledAt, Status)
+SELECT @c11A3R, s.StudentId, @today, N'ACTIVE'
+FROM Students s
+WHERE TRY_CONVERT(INT, SUBSTRING(s.StudentCode, 4, 3)) BETWEEN 51 AND 60
+    AND s.StudentCode LIKE N'STU[0-9][0-9][0-9]'
+    AND s.Status = N'ACTIVE';
+
+INSERT INTO ClassEnrollments (ClassId, StudentId, EnrolledAt, Status)
+SELECT @c12A1R, s.StudentId, @today, N'ACTIVE'
+FROM Students s
+WHERE TRY_CONVERT(INT, SUBSTRING(s.StudentCode, 4, 3)) BETWEEN 61 AND 70
+    AND s.StudentCode LIKE N'STU[0-9][0-9][0-9]'
+    AND s.Status = N'ACTIVE';
+
+INSERT INTO ClassEnrollments (ClassId, StudentId, EnrolledAt, Status)
+SELECT @c12A2R, s.StudentId, @today, N'ACTIVE'
+FROM Students s
+WHERE TRY_CONVERT(INT, SUBSTRING(s.StudentCode, 4, 3)) BETWEEN 71 AND 80
+    AND s.StudentCode LIKE N'STU[0-9][0-9][0-9]'
+    AND s.Status = N'ACTIVE';
+
+INSERT INTO ClassEnrollments (ClassId, StudentId, EnrolledAt, Status)
+SELECT @c12A3R, s.StudentId, @today, N'ACTIVE'
+FROM Students s
+WHERE TRY_CONVERT(INT, SUBSTRING(s.StudentCode, 4, 3)) BETWEEN 81 AND 90
+    AND s.StudentCode LIKE N'STU[0-9][0-9][0-9]'
+    AND s.Status = N'ACTIVE';
+
+-- Extra 20 Grade 10 students: +10 in 10A1, +10 in 10A2
+INSERT INTO ClassEnrollments (ClassId, StudentId, EnrolledAt, Status)
+SELECT @c10A1R, s.StudentId, @today, N'ACTIVE'
+FROM Students s
+WHERE TRY_CONVERT(INT, SUBSTRING(s.StudentCode, 4, 3)) BETWEEN 151 AND 160
+    AND s.StudentCode LIKE N'STU[0-9][0-9][0-9]'
+    AND s.Status = N'ACTIVE';
+
+INSERT INTO ClassEnrollments (ClassId, StudentId, EnrolledAt, Status)
+SELECT @c10A2R, s.StudentId, @today, N'ACTIVE'
+FROM Students s
+WHERE TRY_CONVERT(INT, SUBSTRING(s.StudentCode, 4, 3)) BETWEEN 161 AND 170
+    AND s.StudentCode LIKE N'STU[0-9][0-9][0-9]'
+    AND s.Status = N'ACTIVE';
+
+PRINT N'✓ Linked 110 active students to classes (10A1=20, 10A2=20, others=10)';
+
+-- Hard assertions for deterministic seed quality
+IF EXISTS (
+    SELECT c.Name
+    FROM Classes c
+    LEFT JOIN ClassEnrollments ce ON ce.ClassId = c.ClassId AND ce.Status = N'ACTIVE'
+    LEFT JOIN Students s ON s.StudentId = ce.StudentId AND s.Status = N'ACTIVE'
+    WHERE c.SchoolYearId = @syYear
+      AND c.Name IN (N'10A1', N'10A2', N'10A3', N'11A1', N'11A2', N'11A3', N'12A1', N'12A2', N'12A3')
+    GROUP BY c.Name
+    HAVING COUNT(s.StudentId) <> CASE WHEN c.Name IN (N'10A1', N'10A2') THEN 20 ELSE 10 END
+)
+    THROW 51001, 'Seed validation failed: class counts mismatch (expected 10A1=20, 10A2=20, others=10).', 1;
+
+IF (
+    (SELECT COUNT(*) FROM Students WHERE Status = N'ACTIVE' AND CurrentGrade = 10) <> 50 OR
+    (SELECT COUNT(*) FROM Students WHERE Status = N'ACTIVE' AND CurrentGrade = 11) <> 30 OR
+    (SELECT COUNT(*) FROM Students WHERE Status = N'ACTIVE' AND CurrentGrade = 12) <> 30
+)
+    THROW 51002, 'Seed validation failed: active student grade totals are not 50/30/30 for grades 10/11/12.', 1;
+GO
+
+PRINT N'';
+PRINT N'=======================================================';
+PRINT N'  eStudiez EXPANDED seed completed!';
+PRINT N'';
+PRINT N'  FINAL TOTALS:';
+PRINT N'  Users: 1 admin + 10 teachers + 186 students + 186 parents = 383 total';
+PRINT N'  Students breakdown:';
+PRINT N'    - 110 active (50 Grade 10, 30 Grade 11, 30 Grade 12)';
+PRINT N'    - 30 graduated (Grade 12, GRADUATED status)';
+PRINT N'    - 30 pending (PENDING_GRADE_ASSIGNMENT status)';
+PRINT N'  Classes: 9 (10A1=20, 10A2=20, others=10 active students)';
+PRINT N'';
+PRINT N'  Sample credentials:';
+PRINT N'  admin            / Admin@123';
+PRINT N'  student.s001     / Student@123';
+PRINT N'  parent.s001      / Parent@123';
 PRINT N'=======================================================';
 GO

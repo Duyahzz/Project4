@@ -17,7 +17,6 @@ import type {
   NewsItem,
   NotificationAudience,
   NotificationItem,
-  RegistrationRequest,
   Resource,
   Role,
   ScoreDetail,
@@ -35,17 +34,17 @@ export type ApiTeacher     = components['schemas']['Teacher']
 export type ApiClass       = components['schemas']['SchoolClass']
 export type ApiAssessment  = components['schemas']['Assessment']
 export type ApiMark        = components['schemas']['StudentMark']
-export type ApiRegistration = components['schemas']['RegistrationRequest']
 
 // ─── Base URL ────────────────────────────────────────────────────────────────
-// Empty string = same origin, so /api/* requests are proxied by Vite in dev
-// and served by the backend in production (no CORS issues either way).
-export const API_BASE = ''
+// Points to backend running on localhost:8081
+// CORS is handled by Spring Security configuration on the backend
+export const API_BASE = 'http://localhost:8081'
 
 // ─── Base fetch helpers ──────────────────────────────────────────────────────
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: { 'Content-Type': 'application/json', ...init?.headers },
+    credentials: 'include',
     ...init,
   })
   if (!res.ok) throw new Error(`[API] ${init?.method ?? 'GET'} ${path} → ${res.status}`)
@@ -56,8 +55,6 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 const apiGet   = <T>(path: string)               => apiFetch<T>(path)
 const apiPost  = <T>(path: string, body: unknown) => apiFetch<T>(path, { method: 'POST', body: JSON.stringify(body) })
 const apiPut   = <T>(path: string, body: unknown) => apiFetch<T>(path, { method: 'PUT',  body: JSON.stringify(body) })
-const apiPatch = <T>(path: string, body?: unknown) =>
-  apiFetch<T>(path, { method: 'PATCH', body: body !== undefined ? JSON.stringify(body) : undefined })
 const apiDel   = (path: string)                   => apiFetch<void>(path, { method: 'DELETE' })
 
 // ─── Lookup tables ───────────────────────────────────────────────────────────
@@ -146,11 +143,13 @@ export const getMarksByStudent    = (studentId: string) =>
 export const saveMarkApi          = (assessmentId: number, m: ApiMark) =>
   apiPost<ApiMark>(`/api/assessments/${assessmentId}/marks`, m)
 
-// ─── Registrations ───────────────────────────────────────────────────────────
-export const getRegistrations       = () => apiGet<ApiRegistration[]>('/api/registrations')
-export const submitRegistrationApi  = (r: ApiRegistration) => apiPost<ApiRegistration>('/api/registrations', r)
-export const approveRegistrationApi = (id: number) => apiPatch<ApiRegistration>(`/api/registrations/${id}/approve`)
-export const rejectRegistrationApi  = (id: number) => apiPatch<ApiRegistration>(`/api/registrations/${id}/reject`)
+// ─── Grade Management ─────────────────────────────────────────────────────────
+export const promoteAllStudents = (schoolYearId: number) =>
+  apiPost<{ message: string }>('/api/admin/grade-management/promote-all-for-year', { schoolYearId })
+export const assignGradeToStudent = (studentId: string, gradeId: number) =>
+  apiPut<{ message: string }>(`/api/admin/grade-management/assign-grade/${studentId}`, { gradeId })
+export const markStudentAsGraduated = (studentId: string) =>
+  apiPut<{ message: string }>(`/api/admin/grade-management/mark-as-graduated/${studentId}`, {})
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 export interface LoginResponse {
@@ -260,21 +259,6 @@ export function mapApiMarkToScore(
     description: assessment.title ?? '',
     date: assessment.assessmentDate ?? '',
     scoreReceived: mark.score ?? 0,
-  }
-}
-
-/** Map a backend RegistrationRequest to the frontend RegistrationRequest shape. */
-export function mapApiRegistration(r: ApiRegistration): RegistrationRequest {
-  return {
-    id: r.requestId ?? 0,
-    email: r.email ?? '',
-    fullName: r.fullName ?? '',
-    address: '',
-    phone: r.phone ?? undefined,
-    password: '',
-    role: (r.roleRequested as Role) ?? 'student',
-    status: ((r.status ?? 'PENDING').toLowerCase() as RegistrationRequest['status']),
-    submittedAt: r.createdAt?.slice(0, 16) ?? new Date().toISOString().slice(0, 16),
   }
 }
 
@@ -475,6 +459,8 @@ export function mapApiTimetableSlot(
     classId: String(s.classId ?? ''),
     day: DAY_OF_WEEK_MAP[s.dayOfWeek ?? 1] ?? 'Mon',
     period: s.periodNo ?? 1,
+    startTime: s.startTime ?? '00:00',
+    endTime: s.endTime ?? '00:00',
     subject: SUBJECT_ID_MAP[s.subjectId ?? 0] ?? String(s.subjectId ?? ''),
     teacher: nameByUserId.get(s.teacherId ?? '') ?? s.teacherId ?? '',
     room: s.room ?? '',

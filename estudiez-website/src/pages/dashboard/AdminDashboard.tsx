@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Card } from '../../components/Card'
 import { FormField } from '../../components/FormField'
@@ -7,6 +7,7 @@ import { Tabs } from '../../components/Tabs'
 import { useAuth } from '../../hooks/useAuth'
 import { useData } from '../../hooks/useData'
 import { useToast } from '../../hooks/useToast'
+import { assignGradeToStudent, markStudentAsGraduated } from '../../services/api'
 import { userDetailPath } from '../userDetailPath'
 import { chatGroupDetailPath } from '../chatGroupDetailPath'
 import { classDetailPath } from '../classDetailPath'
@@ -14,142 +15,142 @@ import { notificationDetailPath } from '../notificationDetailPath'
 import type { ChatGroupType, Grade } from '../../types'
 
 export function AdminDashboard() {
-  const { users, classes, registrations } = useData()
+  const { users, classes } = useData()
+  const navigate = useNavigate()
+  const [activeView, setActiveView] = useState<'overview' | 'administration'>('overview')
+
+  const students = useMemo(() => users.filter((u) => u.role === 'student'), [users])
+
+  const classGradeMap = useMemo(() => {
+    return new Map(classes.map((schoolClass) => [schoolClass.id, schoolClass.grade]))
+  }, [classes])
 
   const counts = useMemo(() => {
+    const byGrade = { 10: 0, 11: 0, 12: 0 } as Record<Grade, number>
+    for (const student of students) {
+      const grade = student.classId ? classGradeMap.get(student.classId) ?? student.grade : student.grade
+      if (grade) byGrade[grade] += 1
+    }
+
+    const byClass = classes
+      .map((schoolClass) => ({
+        id: schoolClass.id,
+        name: schoolClass.name,
+        grade: schoolClass.grade,
+        count: students.filter((student) => student.classId === schoolClass.id).length,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+
     return {
-      students: users.filter((u) => u.role === 'student').length,
+      students: students.length,
       teachers: users.filter((u) => u.role === 'teacher').length,
       parents: users.filter((u) => u.role === 'parent').length,
       classes: classes.length,
+      byGrade,
+      byClass,
     }
-  }, [users, classes])
-
-  const pendingCount = registrations.filter((r) => r.status === 'pending').length
+  }, [users, classes, students, classGradeMap])
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <StatCard label="Students" value={counts.students} />
-        <StatCard label="Teachers" value={counts.teachers} />
-        <StatCard label="Parents" value={counts.parents} />
-        <StatCard label="Classes" value={counts.classes} />
-      </div>
-
-      <Card title="School Administration">
-        <Tabs
-          tabs={[
-            {
-              id: 'requests',
-              label: pendingCount > 0 ? `Requests (${pendingCount})` : 'Requests',
-              content: <ManageRequests />,
-            },
-            { id: 'students', label: 'Students', content: <ManageStudents /> },
-            { id: 'teachers', label: 'Teachers', content: <ManageTeachers /> },
-            { id: 'parents', label: 'Parents', content: <ManageParents /> },
-            { id: 'classes', label: 'Classes', content: <ManageClasses /> },
-            { id: 'news', label: 'News', content: <ManageNews /> },
-            { id: 'notify', label: 'Notify Teachers', content: <NotifyTeachers /> },
-            { id: 'chat', label: 'Chat Groups', content: <ManageChatGroups /> },
-          ]}
-        />
-      </Card>
-    </div>
-  )
-}
-
-function ManageRequests() {
-  const { registrations, approveRegistration, rejectRegistration } = useData()
-  const { push } = useToast()
-
-  const pending = registrations.filter((r) => r.status === 'pending')
-  const handled = registrations.filter((r) => r.status !== 'pending')
-
-  const handleApprove = (id: number, email: string) => {
-    approveRegistration(id)
-    push('success', `Account approved. Login info sent to ${email}.`)
-  }
-
-  const handleReject = (id: number, email: string) => {
-    if (!window.confirm(`Reject registration request from ${email}?`)) return
-    rejectRegistration(id)
-    push('info', `Registration request from ${email} was rejected.`)
-  }
-
-  return (
-    <div className="space-y-4">
-      <Card
-        title="Pending Registration Requests"
-        description="New sign-ups must be approved before they can log in."
-      >
-        {pending.length === 0 ? (
-          <p className="text-sm text-slate-500">No pending requests.</p>
-        ) : (
-          <ul className="space-y-3">
-            {pending.map((request) => (
-              <li
-                key={request.id}
-                className="border border-slate-200 rounded-lg p-4 flex flex-wrap items-start justify-between gap-3"
-              >
-                <div>
-                  <p className="font-semibold text-slate-900">
-                    {request.fullName}{' '}
-                    <span className="ml-1 inline-flex items-center rounded-full bg-indigo-100 text-indigo-700 px-2 py-0.5 text-xs font-semibold uppercase">
-                      {request.role}
-                    </span>
-                  </p>
-                  <p className="text-sm text-slate-600">{request.email}</p>
-                  <p className="text-xs text-slate-500 mt-1">
-                    {request.address}
-                    {request.age ? ` · Age ${request.age}` : ''}
-                    {request.childEmail ? ` · Child: ${request.childEmail}` : ''}
-                  </p>
-                  <p className="text-xs text-slate-400 mt-1">Submitted {request.submittedAt}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleApprove(request.id, request.email)}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-md px-3 py-1.5"
-                  >
-                    Approve
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleReject(request.id, request.email)}
-                    className="border border-slate-300 text-slate-700 hover:bg-slate-100 text-sm font-semibold rounded-md px-3 py-1.5"
-                  >
-                    Reject
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
+      <Card>
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">Admin Workspace</h2>
+            <p className="text-sm text-slate-500">Switch between dashboard analytics and administration tools.</p>
+          </div>
+          <div className="inline-flex rounded-lg border border-slate-200 p-1 bg-slate-50">
+            <button
+              type="button"
+              onClick={() => setActiveView('overview')}
+              className={`px-3 py-1.5 text-sm font-medium rounded-md ${
+                activeView === 'overview' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600 hover:text-slate-800'
+              }`}
+            >
+              Dashboard Overview
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveView('administration')}
+              className={`px-3 py-1.5 text-sm font-medium rounded-md ${
+                activeView === 'administration'
+                  ? 'bg-white text-indigo-700 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-800'
+              }`}
+            >
+              School Administration
+            </button>
+          </div>
+        </div>
       </Card>
 
-      {handled.length > 0 ? (
-        <Card title="Reviewed Requests">
-          <ul className="divide-y divide-slate-100">
-            {handled.map((request) => (
-              <li key={request.id} className="py-2 flex items-center justify-between gap-3">
-                <span className="text-sm text-slate-700">
-                  {request.fullName} · {request.email}
-                </span>
-                <span
-                  className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold uppercase ${
-                    request.status === 'approved'
-                      ? 'bg-emerald-100 text-emerald-700'
-                      : 'bg-rose-100 text-rose-700'
-                  }`}
-                >
-                  {request.status}
-                </span>
-              </li>
-            ))}
-          </ul>
+      {activeView === 'overview' ? (
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <StatCard label="Students" value={counts.students} />
+            <StatCard label="Teachers" value={counts.teachers} />
+            <StatCard label="Parents" value={counts.parents} />
+            <StatCard label="Classes" value={counts.classes} />
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <Card title="Students by Grade">
+              <ul className="space-y-2">
+                {[10, 11, 12].map((grade) => (
+                  <li
+                    key={grade}
+                    className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2"
+                  >
+                    <span className="text-slate-700">Grade {grade}</span>
+                    <span className="font-semibold text-indigo-700">{counts.byGrade[grade as Grade]}</span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+
+            <Card title="Students by Class">
+              {counts.byClass.length === 0 ? (
+                <p className="text-sm text-slate-500">No classes found.</p>
+              ) : (
+                <ul className="space-y-2 max-h-80 overflow-auto pr-1">
+                  {counts.byClass.map((item) => (
+                    <li
+                      key={item.id}
+                      className="rounded-lg border border-slate-200"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => navigate(classDetailPath(item.id))}
+                        className="w-full px-3 py-2 flex items-center justify-between text-left hover:bg-slate-50 rounded-lg"
+                      >
+                        <span className="text-slate-700">
+                          {item.name} <span className="text-slate-400">(Grade {item.grade})</span>
+                        </span>
+                        <span className="font-semibold text-indigo-700">{item.count}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+          </div>
+        </>
+      ) : (
+        <Card title="School Administration">
+          <Tabs
+            tabs={[
+              { id: 'students', label: 'Students', content: <ManageStudents /> },
+              { id: 'grades', label: 'Grade Management', content: <ManageGrades /> },
+              { id: 'teachers', label: 'Teachers', content: <ManageTeachers /> },
+              { id: 'parents', label: 'Parents', content: <ManageParents /> },
+              { id: 'classes', label: 'Classes', content: <ManageClasses /> },
+              { id: 'news', label: 'News', content: <ManageNews /> },
+              { id: 'notify', label: 'Notify Teachers', content: <NotifyTeachers /> },
+              { id: 'chat', label: 'Chat Groups', content: <ManageChatGroups /> },
+            ]}
+          />
         </Card>
-      ) : null}
+      )}
     </div>
   )
 }
@@ -187,7 +188,76 @@ function ManageStudents() {
   const { users, classes, addUser, updateUser } = useData()
   const { push } = useToast()
   const navigate = useNavigate()
-  const students = users.filter((u) => u.role === 'student')
+  const students = useMemo(() => users.filter((u) => u.role === 'student'), [users])
+
+  const classLabelMap = useMemo(() => {
+    return new Map(classes.map((schoolClass) => [schoolClass.id, `${schoolClass.name} (Grade ${schoolClass.grade})`]))
+  }, [classes])
+
+  const [searchTerm, setSearchTerm] = useState('')
+  const [selectedClassFilter, setSelectedClassFilter] = useState<string>('all')
+  const [sortBy, setSortBy] = useState<'name' | 'class' | 'email'>('name')
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
+  const [page, setPage] = useState(1)
+  const pageSize = 10
+
+  const filteredAndSortedStudents = useMemo(() => {
+    const normalizedSearch = searchTerm.trim().toLowerCase()
+
+    const classFiltered =
+      selectedClassFilter === 'all'
+        ? students
+        : students.filter((student) => (student.classId ?? 'unassigned') === selectedClassFilter)
+
+    const filtered = normalizedSearch
+      ? classFiltered.filter((student) => {
+          const classLabel = student.classId ? classLabelMap.get(student.classId) ?? student.classId : 'Unassigned'
+          return (
+            student.fullName.toLowerCase().includes(normalizedSearch) ||
+            student.email.toLowerCase().includes(normalizedSearch) ||
+            classLabel.toLowerCase().includes(normalizedSearch)
+          )
+        })
+      : classFiltered
+
+    const sorted = [...filtered].sort((a, b) => {
+      const aClass = a.classId ? classLabelMap.get(a.classId) ?? a.classId : 'Unassigned'
+      const bClass = b.classId ? classLabelMap.get(b.classId) ?? b.classId : 'Unassigned'
+
+      let left = ''
+      let right = ''
+      if (sortBy === 'name') {
+        left = a.fullName
+        right = b.fullName
+      } else if (sortBy === 'email') {
+        left = a.email
+        right = b.email
+      } else {
+        left = aClass
+        right = bClass
+      }
+
+      const result = left.localeCompare(right)
+      return sortDirection === 'asc' ? result : -result
+    })
+
+    return sorted
+  }, [students, selectedClassFilter, searchTerm, sortBy, sortDirection, classLabelMap])
+
+  const totalPages = Math.max(1, Math.ceil(filteredAndSortedStudents.length / pageSize))
+
+  useEffect(() => {
+    setPage(1)
+  }, [searchTerm, selectedClassFilter, sortBy, sortDirection])
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages)
+  }, [page, totalPages])
+
+  const pagedStudents = useMemo(() => {
+    const start = (page - 1) * pageSize
+    return filteredAndSortedStudents.slice(start, start + pageSize)
+  }, [filteredAndSortedStudents, page])
 
   const [modalOpen, setModalOpen] = useState(false)
   const [form, setForm] = useState<StudentFormState>({
@@ -362,6 +432,55 @@ function ManageStudents() {
       </Modal>
 
       <Card>
+        <div className="mb-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <FormField
+            label="Search"
+            name="searchStudents"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Search by name, email, or class"
+          />
+          <FormField
+            as="select"
+            label="Class filter"
+            name="classFilter"
+            value={selectedClassFilter}
+            onChange={(e) => setSelectedClassFilter(e.target.value)}
+          >
+            <option value="all">All classes</option>
+            <option value="unassigned">Unassigned</option>
+            {classes
+              .slice()
+              .sort((a, b) => a.name.localeCompare(b.name))
+              .map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} (Grade {c.grade})
+                </option>
+              ))}
+          </FormField>
+          <FormField
+            as="select"
+            label="Sort by"
+            name="sortStudents"
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as 'name' | 'class' | 'email')}
+          >
+            <option value="name">Name</option>
+            <option value="class">Class</option>
+            <option value="email">Email</option>
+          </FormField>
+          <FormField
+            as="select"
+            label="Direction"
+            name="sortDirection"
+            value={sortDirection}
+            onChange={(e) => setSortDirection(e.target.value as 'asc' | 'desc')}
+          >
+            <option value="asc">Ascending</option>
+            <option value="desc">Descending</option>
+          </FormField>
+        </div>
+
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
             <thead>
@@ -372,14 +491,14 @@ function ManageStudents() {
               </tr>
             </thead>
             <tbody>
-              {students.length === 0 ? (
+              {filteredAndSortedStudents.length === 0 ? (
                 <tr>
                   <td colSpan={3} className="py-3 text-slate-500">
-                    No students yet.
+                    No students found.
                   </td>
                 </tr>
               ) : (
-                students.map((s) => (
+                pagedStudents.map((s) => (
                   <tr key={s.email} className="border-b border-slate-100">
                     <td className="py-2 pr-4 font-semibold">
                       <button
@@ -390,7 +509,9 @@ function ManageStudents() {
                         {s.fullName}
                       </button>
                     </td>
-                    <td className="py-2 pr-4">{s.classId}</td>
+                    <td className="py-2 pr-4">
+                      {s.classId ? classLabelMap.get(s.classId) ?? s.classId : 'Unassigned'}
+                    </td>
                     <td className="py-2 pr-4 text-slate-600">{s.email}</td>
                   </tr>
                 ))
@@ -398,7 +519,526 @@ function ManageStudents() {
             </tbody>
           </table>
         </div>
+
+        {filteredAndSortedStudents.length > 0 && (
+          <div className="mt-3 flex items-center justify-between text-sm text-slate-600">
+            <span>
+              Showing {(page - 1) * pageSize + 1}-{Math.min(page * pageSize, filteredAndSortedStudents.length)} of{' '}
+              {filteredAndSortedStudents.length}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="rounded border border-slate-300 px-3 py-1 disabled:opacity-50"
+              >
+                Previous
+              </button>
+              <span>
+                Page {page}/{totalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                className="rounded border border-slate-300 px-3 py-1 disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </Card>
+    </div>
+  )
+}
+
+function ManageGrades() {
+  const { users, classes, timetable, updateUser } = useData()
+  const { push } = useToast()
+  const [activeTab, setActiveTab] = useState<'promotion' | 'assign'>('promotion')
+  const [selectedGradeLevel, setSelectedGradeLevel] = useState<10 | 11 | 12 | 'graduate'>(10)
+  const [selectedStudentEmail, setSelectedStudentEmail] = useState<string>('')
+  const [promotionSourceGrade, setPromotionSourceGrade] = useState<'unassigned' | 10 | 11>(10)
+  const [sourceClassFilter, setSourceClassFilter] = useState<string>('all')
+  const [selectedTargetYear, setSelectedTargetYear] = useState<string>('')
+  const [selectedTargetClassId, setSelectedTargetClassId] = useState<string>('')
+  const [excludedPromotionEmails, setExcludedPromotionEmails] = useState<string[]>([])
+  const [isPromoting, setIsPromoting] = useState(false)
+  const [isAssigning, setIsAssigning] = useState(false)
+
+  const students = users.filter((u) => u.role === 'student')
+  const classGradeMap = new Map(classes.map((c) => [c.id, c.grade]))
+  const getDerivedGrade = (student: (typeof students)[number]) =>
+    student.classId ? classGradeMap.get(student.classId) ?? student.grade : student.grade
+  const enrolledStudents = students.filter((s) => !!s.classId && classGradeMap.has(s.classId))
+  const studentsByGrade = {
+    10: enrolledStudents.filter((s) => getDerivedGrade(s) === 10),
+    11: enrolledStudents.filter((s) => getDerivedGrade(s) === 11),
+    12: enrolledStudents.filter((s) => getDerivedGrade(s) === 12),
+  }
+
+  const promotableStudents = useMemo(() => {
+    return students.filter((student) => {
+      const derivedGrade = getDerivedGrade(student)
+      const canPromoteByGrade = derivedGrade === 10 || derivedGrade === 11
+      const canPromoteFromUnassigned = !student.classId && !derivedGrade
+      return canPromoteByGrade || canPromoteFromUnassigned
+    })
+  }, [students, classGradeMap])
+
+  const promotableSet = useMemo(() => new Set(promotableStudents.map((s) => s.email)), [promotableStudents])
+
+  const sourceClassOptions = useMemo(
+    () => classes.filter((c) => c.grade === 10 || c.grade === 11).sort((a, b) => a.name.localeCompare(b.name)),
+    [classes],
+  )
+
+  const expectedTargetGrade = promotionSourceGrade === 'unassigned' ? 10 : promotionSourceGrade === 10 ? 11 : 12
+
+  const availableTargetYears = useMemo(
+    () => Array.from(new Set(classes.map((c) => c.year))).sort((a, b) => b.localeCompare(a)),
+    [classes],
+  )
+
+  const targetClassOptions = useMemo(() => {
+    if (!selectedTargetYear) return []
+    return classes
+      .filter((c) => c.year === selectedTargetYear && c.grade === expectedTargetGrade)
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [classes, selectedTargetYear, expectedTargetGrade])
+
+  const selectedTargetClass = targetClassOptions.find((c) => c.id === selectedTargetClassId)
+  const targetClassHasHomeroomTeacher = !!selectedTargetClass?.homeroomTeacher
+  const targetClassHasRoom = !!selectedTargetClass && timetable.some((slot) => slot.classId === selectedTargetClass.id && !!slot.room)
+
+  const filteredPromotionCandidates = useMemo(() => {
+    return promotableStudents.filter((student) => {
+      const grade = getDerivedGrade(student)
+      const gradeMatch =
+        promotionSourceGrade === 'unassigned' ? !student.classId && !grade : grade === promotionSourceGrade
+      const classMatch = sourceClassFilter === 'all' ? true : student.classId === sourceClassFilter
+      return gradeMatch && classMatch
+    })
+  }, [promotableStudents, promotionSourceGrade, sourceClassFilter])
+
+  const selectedPromotionEmails = useMemo(() => {
+    const excludedSet = new Set(excludedPromotionEmails)
+    return filteredPromotionCandidates.filter((s) => !excludedSet.has(s.email)).map((s) => s.email)
+  }, [filteredPromotionCandidates, excludedPromotionEmails])
+
+  const isAllFilteredIncluded =
+    filteredPromotionCandidates.length > 0 && selectedPromotionEmails.length === filteredPromotionCandidates.length
+
+  const toggleStudentInclusion = (email: string) => {
+    setExcludedPromotionEmails((prev) =>
+      prev.includes(email) ? prev.filter((item) => item !== email) : [...prev, email],
+    )
+  }
+
+  const toggleSelectAllFiltered = () => {
+    setExcludedPromotionEmails((prev) => {
+      const filteredSet = new Set(filteredPromotionCandidates.map((s) => s.email))
+
+      if (isAllFilteredIncluded) {
+        const merged = new Set(prev)
+        filteredSet.forEach((email) => merged.add(email))
+        return Array.from(merged)
+      }
+
+      return prev.filter((email) => !filteredSet.has(email))
+    })
+  }
+
+  useEffect(() => {
+    setExcludedPromotionEmails((prev) => prev.filter((email) => users.some((u) => u.email === email) && promotableSet.has(email)))
+  }, [users, promotableSet])
+
+  useEffect(() => {
+    setExcludedPromotionEmails([])
+  }, [promotionSourceGrade, sourceClassFilter])
+
+  useEffect(() => {
+    if (!selectedTargetYear && availableTargetYears.length > 0) {
+      setSelectedTargetYear(availableTargetYears[0])
+    }
+  }, [selectedTargetYear, availableTargetYears])
+
+  useEffect(() => {
+    if (targetClassOptions.length === 0) {
+      setSelectedTargetClassId('')
+      return
+    }
+    if (!targetClassOptions.some((c) => c.id === selectedTargetClassId)) {
+      setSelectedTargetClassId(targetClassOptions[0].id)
+    }
+  }, [targetClassOptions, selectedTargetClassId])
+
+  const handlePromoteSelected = async () => {
+    if (selectedPromotionEmails.length === 0) {
+      push('info', 'Select at least one student to promote.')
+      return
+    }
+
+    if (!selectedTargetClass) {
+      push('error', 'Select a destination class for the new school year first.')
+      return
+    }
+
+    if (!targetClassHasHomeroomTeacher) {
+      push('error', 'Destination class must have a homeroom teacher assigned before promotion.')
+      return
+    }
+
+    if (!targetClassHasRoom) {
+      push('error', 'Destination class must have at least one timetable slot with room assigned before promotion.')
+      return
+    }
+
+    if (!window.confirm(`Promote ${selectedPromotionEmails.length} selected student(s) to ${selectedTargetClass.name} (${selectedTargetClass.year})?`)) {
+      return
+    }
+
+    setIsPromoting(true)
+    try {
+      let successCount = 0
+      const failedStudents: string[] = []
+
+      for (const email of selectedPromotionEmails) {
+        const student = students.find((s) => s.email === email)
+        const grade = student ? getDerivedGrade(student) : undefined
+        const isUnassigned = !!student && !student.classId && !grade
+        if (!student || (grade !== 10 && grade !== 11 && !isUnassigned)) {
+          failedStudents.push(email)
+          continue
+        }
+
+        const studentId = student.userId || student.email
+        const nextGradeId = grade === 10 ? 2 : grade === 11 ? 3 : 1
+
+        try {
+          await assignGradeToStudent(studentId, nextGradeId)
+          updateUser(student.email, { grade: nextGradeId === 1 ? 10 : nextGradeId === 2 ? 11 : 12, classId: selectedTargetClass.id })
+          successCount += 1
+        } catch {
+          failedStudents.push(student.fullName)
+        }
+      }
+
+      if (successCount > 0) {
+        push('success', `Promoted ${successCount} student(s).`)
+      }
+      if (failedStudents.length > 0) {
+        push('error', `Failed to promote ${failedStudents.length} student(s).`)
+      }
+
+      setExcludedPromotionEmails([])
+    } catch (err) {
+      push('error', 'Failed to promote selected students.')
+      console.error(err)
+    } finally {
+      setIsPromoting(false)
+    }
+  }
+
+  const handleAssignGrade = async () => {
+    if (!selectedStudentEmail || !selectedGradeLevel) {
+      push('info', 'Select a student and grade level.')
+      return
+    }
+    const student = students.find((s) => s.email === selectedStudentEmail)
+    if (!student) {
+      push('error', 'Student not found.')
+      return
+    }
+    setIsAssigning(true)
+    try {
+      const studentId = student.userId || student.email
+      if (selectedGradeLevel === 'graduate') {
+        if (getDerivedGrade(student) !== 12) {
+          push('error', 'Only Grade 12 students can be marked as graduated.')
+          return
+        }
+        if (!window.confirm(`Mark ${student.fullName} as graduated?`)) {
+          return
+        }
+        await markStudentAsGraduated(studentId)
+        push('success', `${student.fullName} marked as graduated.`)
+      } else {
+        if (!window.confirm(`Assign Grade ${selectedGradeLevel} to ${student.fullName}?`)) {
+          return
+        }
+        const gradeId = selectedGradeLevel === 10 ? 1 : selectedGradeLevel === 11 ? 2 : 3
+        await assignGradeToStudent(studentId, gradeId)
+        push('success', `Grade ${selectedGradeLevel} assigned to ${student.fullName}.`)
+      }
+      setSelectedStudentEmail('')
+    } catch (err) {
+      push('error', selectedGradeLevel === 'graduate' ? 'Failed to mark student as graduated.' : 'Failed to assign grade.')
+      console.error(err)
+    } finally {
+      setIsAssigning(false)
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex border-b border-slate-200 gap-1">
+        <button
+          onClick={() => setActiveTab('promotion')}
+          className={`px-4 py-2 text-sm font-semibold ${
+            activeTab === 'promotion'
+              ? 'border-b-2 border-indigo-600 text-indigo-600'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          Year-End Promotion
+        </button>
+        <button
+          onClick={() => setActiveTab('assign')}
+          className={`px-4 py-2 text-sm font-semibold ${
+            activeTab === 'assign'
+              ? 'border-b-2 border-indigo-600 text-indigo-600'
+              : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          Assign Grade
+        </button>
+      </div>
+
+      {activeTab === 'promotion' && (
+        <Card title="Year-End Grade Promotion" description="Use rules to auto-select students, then only exclude exceptions.">
+          <div className="space-y-4">
+            <div className="bg-slate-50 border border-slate-200 rounded-md p-4">
+              <h4 className="font-semibold text-slate-900 mb-2">Promotion Eligibility</h4>
+              <ul className="space-y-1 text-sm text-slate-700">
+                <li>Unassigned → Grade 10: <span className="font-semibold">{promotableStudents.filter((s) => !s.classId && !getDerivedGrade(s)).length} students</span></li>
+                <li>Grade 10 → Grade 11: <span className="font-semibold">{studentsByGrade[10].length} students</span></li>
+                <li>Grade 11 → Grade 12: <span className="font-semibold">{studentsByGrade[11].length} students</span></li>
+                <li>Grade 12 students: <span className="text-amber-600">Not promoted (eligible for graduation)</span></li>
+              </ul>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <FormField
+                as="select"
+                label="Source Grade"
+                name="promotionSourceGrade"
+                value={String(promotionSourceGrade)}
+                onChange={(e) => {
+                  const value = e.target.value
+                  if (value === 'unassigned') {
+                    setPromotionSourceGrade(value)
+                    return
+                  }
+                  setPromotionSourceGrade(Number(value) as 10 | 11)
+                }}
+              >
+                <option value="unassigned">Unassigned students (to Grade 10)</option>
+                <option value="10">Grade 10 only</option>
+                <option value="11">Grade 11 only</option>
+              </FormField>
+              <FormField
+                as="select"
+                label="Current Class"
+                name="sourceClassFilter"
+                value={sourceClassFilter}
+                onChange={(e) => setSourceClassFilter(e.target.value)}
+              >
+                <option value="all">All classes</option>
+                {sourceClassOptions.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} (Grade {c.grade})
+                  </option>
+                ))}
+              </FormField>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <FormField
+                as="select"
+                label="Destination School Year"
+                name="promotionTargetYear"
+                value={selectedTargetYear}
+                onChange={(e) => setSelectedTargetYear(e.target.value)}
+              >
+                {availableTargetYears.length === 0 ? (
+                  <option value="">No school year available</option>
+                ) : (
+                  availableTargetYears.map((year) => (
+                    <option key={year} value={year}>
+                      {year}
+                    </option>
+                  ))
+                )}
+              </FormField>
+              <FormField
+                as="select"
+                label="Destination Class"
+                name="promotionTargetClass"
+                value={selectedTargetClassId}
+                onChange={(e) => setSelectedTargetClassId(e.target.value)}
+              >
+                {targetClassOptions.length === 0 ? (
+                  <option value="">No class available for this year and grade</option>
+                ) : (
+                  targetClassOptions.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} (Grade {c.grade})
+                    </option>
+                  ))
+                )}
+              </FormField>
+            </div>
+
+            {selectedTargetClass && (
+              <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                <p>
+                  Destination readiness: Teacher{' '}
+                  <span className={targetClassHasHomeroomTeacher ? 'text-emerald-600 font-semibold' : 'text-rose-600 font-semibold'}>
+                    {targetClassHasHomeroomTeacher ? 'assigned' : 'missing'}
+                  </span>
+                  {' '}| Room{' '}
+                  <span className={targetClassHasRoom ? 'text-emerald-600 font-semibold' : 'text-rose-600 font-semibold'}>
+                    {targetClassHasRoom ? 'assigned' : 'missing'}
+                  </span>
+                </p>
+              </div>
+            )}
+
+            <div className="border border-slate-200 rounded-md">
+              <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2">
+                <span className="text-sm font-medium text-slate-700">Review selection (exclude exceptions)</span>
+                <button
+                  type="button"
+                  onClick={toggleSelectAllFiltered}
+                  className="text-sm text-indigo-600 hover:text-indigo-800"
+                >
+                  {isAllFilteredIncluded ? 'Exclude All' : 'Include All'}
+                </button>
+              </div>
+              <div className="max-h-64 overflow-auto px-3 py-2 space-y-2">
+                {filteredPromotionCandidates.length === 0 ? (
+                  <p className="text-sm text-slate-500">No promotable students match this filter.</p>
+                ) : (
+                  filteredPromotionCandidates.map((student) => {
+                    const grade = getDerivedGrade(student)
+                    const nextGrade = grade === 10 ? 11 : grade === 11 ? 12 : 10
+                    const isIncluded = selectedPromotionEmails.includes(student.email)
+                    const fromLabel = grade ? `G${grade}` : 'Unassigned'
+                    const toLabel = `G${nextGrade}`
+                    return (
+                      <label key={student.email} className="flex items-center justify-between gap-3 rounded-md px-2 py-1.5 hover:bg-slate-50">
+                        <span className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={isIncluded}
+                            onChange={() => toggleStudentInclusion(student.email)}
+                            className="h-4 w-4"
+                          />
+                          <span className="text-sm text-slate-700">
+                            {student.fullName} <span className="text-slate-500">({student.email})</span>
+                          </span>
+                        </span>
+                        <span className="text-xs text-slate-500">{fromLabel} → {toLabel}</span>
+                      </label>
+                    )
+                  })
+                )}
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-500">
+              Included for promotion: {selectedPromotionEmails.length} / {filteredPromotionCandidates.length}
+            </p>
+
+            <button
+              onClick={handlePromoteSelected}
+              disabled={
+                isPromoting ||
+                selectedPromotionEmails.length === 0 ||
+                !selectedTargetClass ||
+                !targetClassHasHomeroomTeacher ||
+                !targetClassHasRoom
+              }
+              className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-semibold rounded-md px-4 py-2"
+            >
+              {isPromoting ? 'Promoting...' : `Promote Selected (${selectedPromotionEmails.length})`}
+            </button>
+          </div>
+        </Card>
+      )}
+
+      {activeTab === 'assign' && (
+        <Card title="Assign Grade / Graduate Student" description="Assign a grade level or mark Grade 12 students as graduated.">
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Select Student</label>
+              <select
+                value={selectedStudentEmail}
+                onChange={(e) => setSelectedStudentEmail(e.target.value)}
+                className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm"
+              >
+                <option value="">-- Select a student --</option>
+                {students.map((s) => (
+                  <option key={s.email} value={s.email}>
+                    {s.fullName} ({s.email}) - Current: {getDerivedGrade(s) || 'Unassigned'}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">Action</label>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                {([10, 11, 12] as const).map((grade) => (
+                  <button
+                    key={grade}
+                    onClick={() => setSelectedGradeLevel(grade)}
+                    className={`flex-1 py-2 font-semibold rounded-md border ${
+                      selectedGradeLevel === grade
+                        ? 'bg-indigo-600 border-indigo-600 text-white'
+                        : 'border-slate-300 text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    Grade {grade}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setSelectedGradeLevel('graduate')}
+                  className={`flex-1 py-2 font-semibold rounded-md border ${
+                    selectedGradeLevel === 'graduate'
+                      ? 'bg-emerald-600 border-emerald-600 text-white'
+                      : 'border-slate-300 text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  Graduate
+                </button>
+              </div>
+              {selectedGradeLevel === 'graduate' && (
+                <p className="text-xs text-slate-500 mt-2">Only students currently in Grade 12 can be graduated.</p>
+              )}
+            </div>
+            <button
+              onClick={handleAssignGrade}
+              disabled={isAssigning || !selectedStudentEmail}
+              className={`${
+                selectedGradeLevel === 'graduate'
+                  ? 'bg-emerald-600 hover:bg-emerald-700'
+                  : 'bg-indigo-600 hover:bg-indigo-700'
+              } disabled:bg-slate-300 text-white font-semibold rounded-md px-4 py-2`}
+            >
+              {isAssigning
+                ? selectedGradeLevel === 'graduate'
+                  ? 'Marking...'
+                  : 'Assigning...'
+                : selectedGradeLevel === 'graduate'
+                  ? 'Mark as Graduated'
+                  : 'Assign Grade'}
+            </button>
+          </div>
+        </Card>
+      )}
     </div>
   )
 }
@@ -618,11 +1258,24 @@ interface ClassFormState {
   homeroomTeacher: string
 }
 
+function getAcademicYearLabel(startYear: number) {
+  return `${startYear}-${startYear + 1}`
+}
+
+function getDefaultAcademicYearLabel() {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = now.getMonth() + 1
+  // School year typically starts around Aug/Sep.
+  const startYear = month >= 8 ? year : year - 1
+  return getAcademicYearLabel(startYear)
+}
+
 const CLASS_INITIAL: ClassFormState = {
   id: '',
   name: '',
   grade: '10',
-  year: '2025-2026',
+  year: getDefaultAcademicYearLabel(),
   homeroomTeacher: '',
 }
 
@@ -848,6 +1501,11 @@ function ManageClasses() {
   const { push } = useToast()
   const navigate = useNavigate()
   const teachers = users.filter((u) => u.role === 'teacher')
+  const currentAcademicYear = getDefaultAcademicYearLabel()
+  const nextAcademicYear = useMemo(() => {
+    const startYear = Number(currentAcademicYear.split('-')[0])
+    return getAcademicYearLabel(startYear + 1)
+  }, [currentAcademicYear])
 
   const studentsByClass = useMemo(() => {
     const map = new Map<string, number>()
@@ -954,6 +1612,22 @@ function ManageClasses() {
             onChange={(e) => update('year', e.target.value)}
             error={errors.year}
           />
+          <div className="flex items-center gap-2 -mt-1">
+            <button
+              type="button"
+              onClick={() => update('year', currentAcademicYear)}
+              className="text-xs rounded border border-slate-300 px-2 py-1 text-slate-700 hover:bg-slate-50"
+            >
+              Use {currentAcademicYear}
+            </button>
+            <button
+              type="button"
+              onClick={() => update('year', nextAcademicYear)}
+              className="text-xs rounded border border-slate-300 px-2 py-1 text-slate-700 hover:bg-slate-50"
+            >
+              Use {nextAcademicYear}
+            </button>
+          </div>
           <FormField
             as="select"
             label="Homeroom Teacher (optional)"
