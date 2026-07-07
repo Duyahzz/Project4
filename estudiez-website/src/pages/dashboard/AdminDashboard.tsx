@@ -555,13 +555,15 @@ function ManageStudents() {
 }
 
 function ManageGrades() {
-  const { users, classes } = useData()
+  const { users, classes, timetable, updateUser } = useData()
   const { push } = useToast()
   const [activeTab, setActiveTab] = useState<'promotion' | 'assign'>('promotion')
   const [selectedGradeLevel, setSelectedGradeLevel] = useState<10 | 11 | 12 | 'graduate'>(10)
   const [selectedStudentEmail, setSelectedStudentEmail] = useState<string>('')
-  const [promotionSourceGrade, setPromotionSourceGrade] = useState<'all' | 'unassigned' | 10 | 11>('all')
-  const [promotionClassFilter, setPromotionClassFilter] = useState<string>('all')
+  const [promotionSourceGrade, setPromotionSourceGrade] = useState<'unassigned' | 10 | 11>(10)
+  const [sourceClassFilter, setSourceClassFilter] = useState<string>('all')
+  const [selectedTargetYear, setSelectedTargetYear] = useState<string>('')
+  const [selectedTargetClassId, setSelectedTargetClassId] = useState<string>('')
   const [excludedPromotionEmails, setExcludedPromotionEmails] = useState<string[]>([])
   const [isPromoting, setIsPromoting] = useState(false)
   const [isAssigning, setIsAssigning] = useState(false)
@@ -588,24 +590,38 @@ function ManageGrades() {
 
   const promotableSet = useMemo(() => new Set(promotableStudents.map((s) => s.email)), [promotableStudents])
 
-  const promotionClassOptions = useMemo(
+  const sourceClassOptions = useMemo(
     () => classes.filter((c) => c.grade === 10 || c.grade === 11).sort((a, b) => a.name.localeCompare(b.name)),
     [classes],
   )
+
+  const expectedTargetGrade = promotionSourceGrade === 'unassigned' ? 10 : promotionSourceGrade === 10 ? 11 : 12
+
+  const availableTargetYears = useMemo(
+    () => Array.from(new Set(classes.map((c) => c.year))).sort((a, b) => b.localeCompare(a)),
+    [classes],
+  )
+
+  const targetClassOptions = useMemo(() => {
+    if (!selectedTargetYear) return []
+    return classes
+      .filter((c) => c.year === selectedTargetYear && c.grade === expectedTargetGrade)
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [classes, selectedTargetYear, expectedTargetGrade])
+
+  const selectedTargetClass = targetClassOptions.find((c) => c.id === selectedTargetClassId)
+  const targetClassHasHomeroomTeacher = !!selectedTargetClass?.homeroomTeacher
+  const targetClassHasRoom = !!selectedTargetClass && timetable.some((slot) => slot.classId === selectedTargetClass.id && !!slot.room)
 
   const filteredPromotionCandidates = useMemo(() => {
     return promotableStudents.filter((student) => {
       const grade = getDerivedGrade(student)
       const gradeMatch =
-        promotionSourceGrade === 'all'
-          ? true
-          : promotionSourceGrade === 'unassigned'
-            ? !student.classId && !grade
-            : grade === promotionSourceGrade
-      const classMatch = promotionClassFilter === 'all' ? true : student.classId === promotionClassFilter
+        promotionSourceGrade === 'unassigned' ? !student.classId && !grade : grade === promotionSourceGrade
+      const classMatch = sourceClassFilter === 'all' ? true : student.classId === sourceClassFilter
       return gradeMatch && classMatch
     })
-  }, [promotableStudents, promotionSourceGrade, promotionClassFilter])
+  }, [promotableStudents, promotionSourceGrade, sourceClassFilter])
 
   const selectedPromotionEmails = useMemo(() => {
     const excludedSet = new Set(excludedPromotionEmails)
@@ -641,7 +657,23 @@ function ManageGrades() {
 
   useEffect(() => {
     setExcludedPromotionEmails([])
-  }, [promotionSourceGrade, promotionClassFilter])
+  }, [promotionSourceGrade, sourceClassFilter])
+
+  useEffect(() => {
+    if (!selectedTargetYear && availableTargetYears.length > 0) {
+      setSelectedTargetYear(availableTargetYears[0])
+    }
+  }, [selectedTargetYear, availableTargetYears])
+
+  useEffect(() => {
+    if (targetClassOptions.length === 0) {
+      setSelectedTargetClassId('')
+      return
+    }
+    if (!targetClassOptions.some((c) => c.id === selectedTargetClassId)) {
+      setSelectedTargetClassId(targetClassOptions[0].id)
+    }
+  }, [targetClassOptions, selectedTargetClassId])
 
   const handlePromoteSelected = async () => {
     if (selectedPromotionEmails.length === 0) {
@@ -649,7 +681,22 @@ function ManageGrades() {
       return
     }
 
-    if (!window.confirm(`Promote ${selectedPromotionEmails.length} selected student(s) to the next grade?`)) {
+    if (!selectedTargetClass) {
+      push('error', 'Select a destination class for the new school year first.')
+      return
+    }
+
+    if (!targetClassHasHomeroomTeacher) {
+      push('error', 'Destination class must have a homeroom teacher assigned before promotion.')
+      return
+    }
+
+    if (!targetClassHasRoom) {
+      push('error', 'Destination class must have at least one timetable slot with room assigned before promotion.')
+      return
+    }
+
+    if (!window.confirm(`Promote ${selectedPromotionEmails.length} selected student(s) to ${selectedTargetClass.name} (${selectedTargetClass.year})?`)) {
       return
     }
 
@@ -672,6 +719,7 @@ function ManageGrades() {
 
         try {
           await assignGradeToStudent(studentId, nextGradeId)
+          updateUser(student.email, { grade: nextGradeId === 1 ? 10 : nextGradeId === 2 ? 11 : 12, classId: selectedTargetClass.id })
           successCount += 1
         } catch {
           failedStudents.push(student.fullName)
@@ -780,33 +828,84 @@ function ManageGrades() {
                 value={String(promotionSourceGrade)}
                 onChange={(e) => {
                   const value = e.target.value
-                  if (value === 'all' || value === 'unassigned') {
+                  if (value === 'unassigned') {
                     setPromotionSourceGrade(value)
                     return
                   }
                   setPromotionSourceGrade(Number(value) as 10 | 11)
                 }}
               >
-                <option value="all">All promotable groups</option>
                 <option value="unassigned">Unassigned students (to Grade 10)</option>
                 <option value="10">Grade 10 only</option>
                 <option value="11">Grade 11 only</option>
               </FormField>
               <FormField
                 as="select"
-                label="Class"
-                name="promotionClassFilter"
-                value={promotionClassFilter}
-                onChange={(e) => setPromotionClassFilter(e.target.value)}
+                label="Current Class"
+                name="sourceClassFilter"
+                value={sourceClassFilter}
+                onChange={(e) => setSourceClassFilter(e.target.value)}
               >
                 <option value="all">All classes</option>
-                {promotionClassOptions.map((c) => (
+                {sourceClassOptions.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name} (Grade {c.grade})
                   </option>
                 ))}
               </FormField>
             </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <FormField
+                as="select"
+                label="Destination School Year"
+                name="promotionTargetYear"
+                value={selectedTargetYear}
+                onChange={(e) => setSelectedTargetYear(e.target.value)}
+              >
+                {availableTargetYears.length === 0 ? (
+                  <option value="">No school year available</option>
+                ) : (
+                  availableTargetYears.map((year) => (
+                    <option key={year} value={year}>
+                      {year}
+                    </option>
+                  ))
+                )}
+              </FormField>
+              <FormField
+                as="select"
+                label="Destination Class"
+                name="promotionTargetClass"
+                value={selectedTargetClassId}
+                onChange={(e) => setSelectedTargetClassId(e.target.value)}
+              >
+                {targetClassOptions.length === 0 ? (
+                  <option value="">No class available for this year and grade</option>
+                ) : (
+                  targetClassOptions.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} (Grade {c.grade})
+                    </option>
+                  ))
+                )}
+              </FormField>
+            </div>
+
+            {selectedTargetClass && (
+              <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                <p>
+                  Destination readiness: Teacher{' '}
+                  <span className={targetClassHasHomeroomTeacher ? 'text-emerald-600 font-semibold' : 'text-rose-600 font-semibold'}>
+                    {targetClassHasHomeroomTeacher ? 'assigned' : 'missing'}
+                  </span>
+                  {' '}| Room{' '}
+                  <span className={targetClassHasRoom ? 'text-emerald-600 font-semibold' : 'text-rose-600 font-semibold'}>
+                    {targetClassHasRoom ? 'assigned' : 'missing'}
+                  </span>
+                </p>
+              </div>
+            )}
 
             <div className="border border-slate-200 rounded-md">
               <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2">
@@ -856,7 +955,13 @@ function ManageGrades() {
 
             <button
               onClick={handlePromoteSelected}
-              disabled={isPromoting || selectedPromotionEmails.length === 0}
+              disabled={
+                isPromoting ||
+                selectedPromotionEmails.length === 0 ||
+                !selectedTargetClass ||
+                !targetClassHasHomeroomTeacher ||
+                !targetClassHasRoom
+              }
               className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-semibold rounded-md px-4 py-2"
             >
               {isPromoting ? 'Promoting...' : `Promote Selected (${selectedPromotionEmails.length})`}
