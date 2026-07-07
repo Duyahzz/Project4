@@ -17,7 +17,6 @@ import type {
   NewsItem,
   NotificationAudience,
   NotificationItem,
-  RegistrationRequest,
   Resource,
   Role,
   ScoreDetail,
@@ -35,7 +34,6 @@ export type ApiTeacher     = components['schemas']['Teacher']
 export type ApiClass       = components['schemas']['SchoolClass']
 export type ApiAssessment  = components['schemas']['Assessment']
 export type ApiMark        = components['schemas']['StudentMark']
-export type ApiRegistration = components['schemas']['RegistrationRequest']
 
 // ─── Base URL ────────────────────────────────────────────────────────────────
 // Points to backend running on localhost:8081
@@ -57,8 +55,6 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 const apiGet   = <T>(path: string)               => apiFetch<T>(path)
 const apiPost  = <T>(path: string, body: unknown) => apiFetch<T>(path, { method: 'POST', body: JSON.stringify(body) })
 const apiPut   = <T>(path: string, body: unknown) => apiFetch<T>(path, { method: 'PUT',  body: JSON.stringify(body) })
-const apiPatch = <T>(path: string, body?: unknown) =>
-  apiFetch<T>(path, { method: 'PATCH', body: body !== undefined ? JSON.stringify(body) : undefined })
 const apiDel   = (path: string)                   => apiFetch<void>(path, { method: 'DELETE' })
 
 // ─── Lookup tables ───────────────────────────────────────────────────────────
@@ -146,12 +142,6 @@ export const getMarksByStudent    = (studentId: string) =>
   apiGet<ApiMark[]>(`/api/assessments/student/${studentId}/marks`)
 export const saveMarkApi          = (assessmentId: number, m: ApiMark) =>
   apiPost<ApiMark>(`/api/assessments/${assessmentId}/marks`, m)
-
-// ─── Registrations ───────────────────────────────────────────────────────────
-export const getRegistrations       = () => apiGet<ApiRegistration[]>('/api/registrations')
-export const submitRegistrationApi  = (r: ApiRegistration) => apiPost<ApiRegistration>('/api/registrations', r)
-export const approveRegistrationApi = (id: number) => apiPatch<ApiRegistration>(`/api/registrations/${id}/approve`)
-export const rejectRegistrationApi  = (id: number) => apiPatch<ApiRegistration>(`/api/registrations/${id}/reject`)
 
 // ─── Grade Management ─────────────────────────────────────────────────────────
 export const promoteAllStudents = (schoolYearId: number) =>
@@ -269,21 +259,6 @@ export function mapApiMarkToScore(
   }
 }
 
-/** Map a backend RegistrationRequest to the frontend RegistrationRequest shape. */
-export function mapApiRegistration(r: ApiRegistration): RegistrationRequest {
-  return {
-    id: r.requestId ?? 0,
-    email: r.email ?? '',
-    fullName: r.fullName ?? '',
-    address: '',
-    phone: r.phone ?? undefined,
-    password: '',
-    role: (r.roleRequested as Role) ?? 'student',
-    status: ((r.status ?? 'PENDING').toLowerCase() as RegistrationRequest['status']),
-    submittedAt: r.createdAt?.slice(0, 16) ?? new Date().toISOString().slice(0, 16),
-  }
-}
-
 // ─── Raw backend DTO types (not yet in generated api-types.d.ts) ─────────────
 
 export interface ApiTimetableSlot {
@@ -390,6 +365,7 @@ export interface ApiAttendanceRecord {
   status?: string
   arrivedAt?: string | null
   note?: string | null
+  recordedBy?: string
 }
 
 export interface ApiLessonSession {
@@ -480,6 +456,8 @@ export function mapApiTimetableSlot(
     classId: String(s.classId ?? ''),
     day: DAY_OF_WEEK_MAP[s.dayOfWeek ?? 1] ?? 'Mon',
     period: s.periodNo ?? 1,
+    startTime: s.startTime ?? '00:00',
+    endTime: s.endTime ?? '00:00',
     subject: SUBJECT_ID_MAP[s.subjectId ?? 0] ?? String(s.subjectId ?? ''),
     teacher: nameByUserId.get(s.teacherId ?? '') ?? s.teacherId ?? '',
     room: s.room ?? '',

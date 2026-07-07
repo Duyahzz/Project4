@@ -102,6 +102,8 @@ export interface TimetableSlot {
   classId: string
   day: DayOfWeek
   period: number
+  startTime: string
+  endTime: string
   subject: string
   teacher: string
   room: string
@@ -199,20 +201,4 @@ export interface ChatMessage {
 export interface Helpline {
   label: string
   phone: string
-}
-
-export type RegistrationStatus = 'pending' | 'approved' | 'rejected'
-
-export interface RegistrationRequest {
-  id: number
-  email: string
-  fullName: string
-  address: string
-  phone?: string
-  password: string
-  role: Role
-  age?: number
-  childEmail?: string
-  status: RegistrationStatus
-  submittedAt: string
 }

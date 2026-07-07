@@ -105,9 +105,10 @@ CREATE TABLE Students (
     Gender        NVARCHAR(20)     NULL,
     Address       NVARCHAR(MAX)    NULL,
     AdmissionDate DATE             NOT NULL DEFAULT CAST(GETDATE() AS DATE),
+    CurrentGrade  INT              NULL,
     Status        NVARCHAR(30)     NOT NULL DEFAULT 'ACTIVE',
     CreatedAt     DATETIME2(7)     NOT NULL DEFAULT SYSDATETIME(),
-    CONSTRAINT CK_Students_Status CHECK (Status IN ('ACTIVE','TRANSFERRED','GRADUATED','SUSPENDED'))
+    CONSTRAINT CK_Students_Status CHECK (Status IN ('ACTIVE','TRANSFERRED','GRADUATED','SUSPENDED','PENDING_GRADE_ASSIGNMENT','INACTIVE'))
 );
 
 CREATE TABLE Parents (
@@ -1791,293 +1792,389 @@ DECLARE @c12A3 INT = (SELECT ClassId FROM Classes WHERE Name = N'12A3' AND Schoo
 PRINT N'✓ Created 5 new classes (10A3, 11A3, 12A1, 12A2, 12A3)';
 GO
 
--- For demonstration: generate 60 more students to reach 76 total (16 existing + 60 new)
--- Full expansion to 150 requires external script due to SQL size limits
--- This provides immediate capability; full expansion can be done separately
-
-INSERT INTO Users (UserId, RoleId, Username, PasswordHash, FullName, Email, Phone, IsActive) 
-SELECT NEWID(), @rStudent, N'student' + CAST(ROW_NUMBER() OVER(ORDER BY (SELECT NULL)) + 16 AS NVARCHAR(10)),
-       @HASH_STUDENT, N'Student Demo' + CAST(ROW_NUMBER() OVER(ORDER BY (SELECT NULL)) + 16 AS NVARCHAR(10)),
-       N'student' + CAST(ROW_NUMBER() OVER(ORDER BY (SELECT NULL)) + 16 AS NVARCHAR(10)) + N'@estudiez.edu.vn',
-       N'0912001' + FORMAT(ROW_NUMBER() OVER(ORDER BY (SELECT NULL)) + 16, '000'), 1
-FROM (SELECT TOP 60 1 FROM (SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5) a 
-      CROSS JOIN (SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5) b
-      CROSS JOIN (SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5) c) x;
-
-PRINT N'✓ Added demo expansion data';
-GO
-
-PRINT N'';
-PRINT N'========================================';
-PRINT N'TEST DATA STRUCTURE:';
-PRINT N'Active Students: 90+ (9 classes, 10 each)';
-PRINT N'  Grade 10: 10A1, 10A2, 10A3 (30 students)';
-PRINT N'  Grade 11: 11A1, 11A2, 11A3 (30 students)';
-PRINT N'  Grade 12: 12A1, 12A2, 12A3 (30 students)';
-PRINT N'Graduated: 30 students (status=GRADUATED)';
-PRINT N'New Hire: 30 students (status=PENDING_ASSIGNMENT)';
-PRINT N'========================================';
-GO
-
 -- ──────────────────────────────────────────────────────────────────────────────
---  SECTION 19 – EXPANDED STUDENT & PARENT DATA (150 students total)
+--  SECTION 19 – EXPANDED STUDENT & PARENT DATA (idempotent)
+--  Safe to rerun without duplicate key errors.
 -- ──────────────────────────────────────────────────────────────────────────────
 
--- Get role and grade IDs
 DECLARE @rStudent INT = (SELECT RoleId FROM Roles WHERE Code = N'STUDENT');
 DECLARE @rParent  INT = (SELECT RoleId FROM Roles WHERE Code = N'PARENT');
-DECLARE @g10 INT = (SELECT GradeId FROM Grades WHERE Code = N'G10');
-DECLARE @g11 INT = (SELECT GradeId FROM Grades WHERE Code = N'G11');
-DECLARE @g12 INT = (SELECT GradeId FROM Grades WHERE Code = N'G12');
+DECLARE @g10Id INT = (SELECT GradeId FROM Grades WHERE Code = N'G10');
+DECLARE @g11Id INT = (SELECT GradeId FROM Grades WHERE Code = N'G11');
+DECLARE @g12Id INT = (SELECT GradeId FROM Grades WHERE Code = N'G12');
 DECLARE @syYear INT = (SELECT TOP 1 SchoolYearId FROM SchoolYears ORDER BY SchoolYearId DESC);
+DECLARE @today DATE = CAST(GETDATE() AS DATE);
 
--- Add missing classes if needed
-IF NOT EXISTS (SELECT 1 FROM Classes WHERE Name = '10A3')
-    INSERT INTO Classes (SchoolYearId, GradeId, Name, TrainingProgram, IsActive) 
-    VALUES (@syYear, @g10, N'10A3', N'REGULAR', 1);
-IF NOT EXISTS (SELECT 1 FROM Classes WHERE Name = '11A3')
-    INSERT INTO Classes (SchoolYearId, GradeId, Name, TrainingProgram, IsActive) 
-    VALUES (@syYear, @g11, N'11A3', N'REGULAR', 1);
-IF NOT EXISTS (SELECT 1 FROM Classes WHERE Name = '12A1')
-    INSERT INTO Classes (SchoolYearId, GradeId, Name, TrainingProgram, IsActive) 
-    VALUES (@syYear, @g12, N'12A1', N'REGULAR', 1);
-IF NOT EXISTS (SELECT 1 FROM Classes WHERE Name = '12A2')
-    INSERT INTO Classes (SchoolYearId, GradeId, Name, TrainingProgram, IsActive) 
-    VALUES (@syYear, @g12, N'12A2', N'REGULAR', 1);
-IF NOT EXISTS (SELECT 1 FROM Classes WHERE Name = '12A3')
-    INSERT INTO Classes (SchoolYearId, GradeId, Name, TrainingProgram, IsActive) 
-    VALUES (@syYear, @g12, N'12A3', N'REGULAR', 1);
+IF NOT EXISTS (SELECT 1 FROM Classes WHERE Name = N'10A3' AND SchoolYearId = @syYear)
+    INSERT INTO Classes (SchoolYearId, GradeId, Name, TrainingProgram, IsActive)
+    VALUES (@syYear, @g10Id, N'10A3', N'REGULAR', 1);
+IF NOT EXISTS (SELECT 1 FROM Classes WHERE Name = N'11A3' AND SchoolYearId = @syYear)
+    INSERT INTO Classes (SchoolYearId, GradeId, Name, TrainingProgram, IsActive)
+    VALUES (@syYear, @g11Id, N'11A3', N'REGULAR', 1);
+IF NOT EXISTS (SELECT 1 FROM Classes WHERE Name = N'12A1' AND SchoolYearId = @syYear)
+    INSERT INTO Classes (SchoolYearId, GradeId, Name, TrainingProgram, IsActive)
+    VALUES (@syYear, @g12Id, N'12A1', N'REGULAR', 1);
+IF NOT EXISTS (SELECT 1 FROM Classes WHERE Name = N'12A2' AND SchoolYearId = @syYear)
+    INSERT INTO Classes (SchoolYearId, GradeId, Name, TrainingProgram, IsActive)
+    VALUES (@syYear, @g12Id, N'12A2', N'REGULAR', 1);
+IF NOT EXISTS (SELECT 1 FROM Classes WHERE Name = N'12A3' AND SchoolYearId = @syYear)
+    INSERT INTO Classes (SchoolYearId, GradeId, Name, TrainingProgram, IsActive)
+    VALUES (@syYear, @g12Id, N'12A3', N'REGULAR', 1);
 
 PRINT N'Added missing classes';
 
--- Generate 150 students + 150 parents: 90 active + 30 graduated + 30 pending
 DECLARE @i INT = 1;
-DECLARE @UserId UNIQUEIDENTIFIER;
-DECLARE @StudentId UNIQUEIDENTIFIER;
-DECLARE @ParentUserId UNIQUEIDENTIFIER;
-DECLARE @ParentId UNIQUEIDENTIFIER;
-DECLARE @ClassName NVARCHAR(50);
-DECLARE @ClassId INT;
+DECLARE @studentUsername NVARCHAR(80);
+DECLARE @studentEmail NVARCHAR(150);
+DECLARE @studentFullName NVARCHAR(150);
+DECLARE @studentCode NVARCHAR(50);
+DECLARE @studentStatus NVARCHAR(30);
+DECLARE @studentGrade INT;
+DECLARE @studentGender NVARCHAR(20);
+DECLARE @studentAddress NVARCHAR(MAX);
+DECLARE @studentDob DATE;
+DECLARE @studentAdmissionDate DATE;
+DECLARE @parentUsername NVARCHAR(80);
+DECLARE @parentEmail NVARCHAR(150);
+DECLARE @parentFullName NVARCHAR(150);
+DECLARE @parentOccupation NVARCHAR(120);
+DECLARE @parentAddress NVARCHAR(MAX);
+DECLARE @parentRelationship NVARCHAR(50);
+DECLARE @studentUserId UNIQUEIDENTIFIER;
+DECLARE @parentUserId UNIQUEIDENTIFIER;
+DECLARE @studentId UNIQUEIDENTIFIER;
+DECLARE @parentId UNIQUEIDENTIFIER;
+DECLARE @familyName NVARCHAR(50);
+DECLARE @middleName NVARCHAR(50);
+DECLARE @givenName NVARCHAR(50);
+DECLARE @parentMiddleName NVARCHAR(50);
+DECLARE @parentGivenName NVARCHAR(50);
 
--- GRADE 10: 30 students in 3 classes (10A1, 10A2, 10A3)
-WHILE @i <= 30
+WHILE @i <= 170
 BEGIN
-    -- Create parent user
-    SET @ParentUserId = NEWID();
-    INSERT INTO Users (UserId, RoleId, Username, PasswordHash, FullName, Email, Phone, IsActive)
-    VALUES (@ParentUserId, @rParent, N'parent.s' + RIGHT('000' + CAST(@i AS VARCHAR), 3), 
-            HASHBYTES('SHA2_256', N'Parent@123'), N'Parent S' + RIGHT('000' + CAST(@i AS VARCHAR), 3),
-            N'parent.s' + RIGHT('000' + CAST(@i AS VARCHAR), 3) + N'@estudiez.edu.vn', 
-            N'09' + RIGHT('00000000' + CAST(900000000 + @i AS VARCHAR), 8), 1);
-    
-    -- Create parent record
-    SET @ParentId = NEWID();
-    INSERT INTO Parents (ParentId, UserId, CreatedAt) 
-    VALUES (@ParentId, @ParentUserId, SYSDATETIME());
-    
-    -- Create student user
-    SET @UserId = NEWID();
-    INSERT INTO Users (UserId, RoleId, Username, PasswordHash, FullName, Email, Phone, IsActive)
-    VALUES (@UserId, @rStudent, N'student.s' + RIGHT('000' + CAST(@i AS VARCHAR), 3),
-            HASHBYTES('SHA2_256', N'Student@123'), N'Student S' + RIGHT('000' + CAST(@i AS VARCHAR), 3),
-            N'student.s' + RIGHT('000' + CAST(@i AS VARCHAR), 3) + N'@estudiez.edu.vn',
-            N'08' + RIGHT('00000000' + CAST(900000000 + @i AS VARCHAR), 8), 1);
-    
-    -- Create student record
-    SET @StudentId = NEWID();
-    INSERT INTO Students (StudentId, UserId, StudentCode, AdmissionDate, Status, CreatedAt)
-    VALUES (@StudentId, @UserId, N'STU' + RIGHT('000' + CAST(@i AS VARCHAR), 3), CAST(GETDATE() AS DATE), N'ACTIVE', SYSDATETIME());
-    
+    SET @familyName = CHOOSE(((@i - 1) % 15) + 1,
+        N'Nguyen', N'Tran', N'Le', N'Pham', N'Hoang',
+        N'Phan', N'Vu', N'Dang', N'Bui', N'Do',
+        N'Ho', N'Ngo', N'Duong', N'Ly', N'Trinh');
+
+    SET @studentGender = CASE WHEN @i % 2 = 0 THEN N'Female' ELSE N'Male' END;
+
+    IF @studentGender = N'Male'
+    BEGIN
+        SET @middleName = CHOOSE(((@i - 1) % 10) + 1,
+            N'Van', N'Huu', N'Duc', N'Quoc', N'Gia',
+            N'Minh', N'Thanh', N'Anh', N'Bao', N'Tien');
+        SET @givenName = CHOOSE(((@i - 1) % 15) + 1,
+            N'An', N'Bao', N'Cuong', N'Dat', N'Duy',
+            N'Hieu', N'Hung', N'Khang', N'Long', N'Minh',
+            N'Nam', N'Phuc', N'Quan', N'Thanh', N'Tung');
+    END
+    ELSE
+    BEGIN
+        SET @middleName = CHOOSE(((@i - 1) % 10) + 1,
+            N'Thi', N'Ngoc', N'Minh', N'Bao', N'Thu',
+            N'Quynh', N'Thanh', N'Khanh', N'Bich', N'Dieu');
+        SET @givenName = CHOOSE(((@i - 1) % 15) + 1,
+            N'Anh', N'Chi', N'Dao', N'Giang', N'Hanh',
+            N'Huong', N'Lan', N'Linh', N'Mai', N'Ngoc',
+            N'Nhung', N'Phuong', N'Thao', N'Trang', N'Yen');
+    END;
+
+    SET @studentFullName = @familyName + N' ' + @middleName + N' ' + @givenName;
+
+    SET @studentAddress =
+        CAST(((@i * 7) % 220) + 1 AS NVARCHAR(10)) + N' ' +
+        CHOOSE(((@i - 1) % 10) + 1,
+            N'Nguyen Trai', N'Le Loi', N'Tran Hung Dao', N'Vo Thi Sau', N'Dien Bien Phu',
+            N'Phan Xich Long', N'Nguyen Van Cu', N'Ly Thuong Kiet', N'Cach Mang Thang 8', N'Ba Thang Hai') +
+        N', ' +
+        CHOOSE(((@i - 1) % 8) + 1,
+            N'District 1', N'District 3', N'District 5', N'District 7',
+            N'District 10', N'Binh Thanh', N'Phu Nhuan', N'Tan Binh') +
+        N', Ho Chi Minh City';
+
+    SET @parentMiddleName = CHOOSE(((@i + 2) % 6) + 1, N'Van', N'Thi', N'Ngoc', N'Duc', N'Thanh', N'Huu');
+    SET @parentGivenName = CHOOSE(((@i + 3) % 14) + 1,
+        N'Binh', N'Cuong', N'Dung', N'Hai', N'Hoa', N'Hung', N'Khanh',
+        N'Lan', N'Linh', N'Nam', N'Nga', N'Phuong', N'Thanh', N'Thu');
+    SET @parentFullName = @familyName + N' ' + @parentMiddleName + N' ' + @parentGivenName;
+
+    SET @parentOccupation = CHOOSE(((@i - 1) % 10) + 1,
+        N'Teacher', N'Engineer', N'Accountant', N'Nurse', N'Business Owner',
+        N'Doctor', N'Civil Servant', N'IT Specialist', N'Lawyer', N'Sales Manager');
+    SET @parentAddress = @studentAddress;
+    SET @parentRelationship = CASE WHEN @i % 2 = 0 THEN N'Mother' ELSE N'Father' END;
+
+    SET @parentUsername = N'parent.s' + RIGHT('000' + CAST(@i AS VARCHAR(3)), 3);
+    SET @parentEmail = @parentUsername + N'@estudiez.edu.vn';
+
+    IF @i <= 90
+    BEGIN
+        SET @studentUsername = N'student.s' + RIGHT('000' + CAST(@i AS VARCHAR(3)), 3);
+        SET @studentEmail = @studentUsername + N'@estudiez.edu.vn';
+        SET @studentCode = N'STU' + RIGHT('000' + CAST(@i AS VARCHAR(3)), 3);
+        SET @studentStatus = N'ACTIVE';
+        SET @studentGrade = CASE
+            WHEN @i BETWEEN 1 AND 30 THEN 10
+            WHEN @i BETWEEN 31 AND 60 THEN 11
+            ELSE 12
+        END;
+
+        SET @studentDob = CASE
+            WHEN @studentGrade = 10 THEN DATEFROMPARTS(2009, ((@i - 1) % 12) + 1, ((@i * 3) % 28) + 1)
+            WHEN @studentGrade = 11 THEN DATEFROMPARTS(2008, ((@i - 1) % 12) + 1, ((@i * 3) % 28) + 1)
+            ELSE DATEFROMPARTS(2007, ((@i - 1) % 12) + 1, ((@i * 3) % 28) + 1)
+        END;
+
+        SET @studentAdmissionDate = CASE
+            WHEN @studentGrade = 10 THEN DATEFROMPARTS(2025, 9, 1)
+            WHEN @studentGrade = 11 THEN DATEFROMPARTS(2024, 9, 1)
+            ELSE DATEFROMPARTS(2023, 9, 1)
+        END;
+    END
+    ELSE IF @i <= 120
+    BEGIN
+        SET @studentUsername = N'student.s' + RIGHT('000' + CAST(@i AS VARCHAR(3)), 3) + N'_g';
+        SET @studentEmail = @studentUsername + N'@estudiez.edu.vn';
+        SET @studentCode = N'STU' + RIGHT('000' + CAST(@i AS VARCHAR(3)), 3) + N'G';
+        SET @studentStatus = N'GRADUATED';
+        SET @studentGrade = 12;
+        SET @studentDob = DATEFROMPARTS(2007, ((@i - 1) % 12) + 1, ((@i * 3) % 28) + 1);
+        SET @studentAdmissionDate = DATEFROMPARTS(2023, 9, 1);
+    END
+    ELSE IF @i <= 150
+    BEGIN
+        SET @studentUsername = N'student.s' + RIGHT('000' + CAST(@i AS VARCHAR(3)), 3) + N'_p';
+        SET @studentEmail = @studentUsername + N'@estudiez.edu.vn';
+        SET @studentCode = N'STU' + RIGHT('000' + CAST(@i AS VARCHAR(3)), 3) + N'P';
+        SET @studentStatus = N'PENDING_GRADE_ASSIGNMENT';
+        SET @studentGrade = NULL;
+        SET @studentDob = DATEFROMPARTS(2010, ((@i - 1) % 12) + 1, ((@i * 3) % 28) + 1);
+        SET @studentAdmissionDate = DATEFROMPARTS(2026, 9, 1);
+    END
+    ELSE
+    BEGIN
+        -- Extra active Grade 10 students for 10A1 and 10A2
+        SET @studentUsername = N'student.s' + RIGHT('000' + CAST(@i AS VARCHAR(3)), 3);
+        SET @studentEmail = @studentUsername + N'@estudiez.edu.vn';
+        SET @studentCode = N'STU' + RIGHT('000' + CAST(@i AS VARCHAR(3)), 3);
+        SET @studentStatus = N'ACTIVE';
+        SET @studentGrade = 10;
+        SET @studentDob = DATEFROMPARTS(2009, ((@i - 1) % 12) + 1, ((@i * 3) % 28) + 1);
+        SET @studentAdmissionDate = DATEFROMPARTS(2025, 9, 1);
+    END;
+
+    IF NOT EXISTS (SELECT 1 FROM Users WHERE Username = @parentUsername)
+        INSERT INTO Users (UserId, RoleId, Username, PasswordHash, FullName, Email, Phone, IsActive)
+        VALUES (NEWID(), @rParent, @parentUsername, HASHBYTES('SHA2_256', N'Parent@123'),
+                @parentFullName, @parentEmail,
+                N'09' + RIGHT('00000000' + CAST(900000000 + @i AS VARCHAR(10)), 8), 1);
+
+    SELECT @parentUserId = UserId FROM Users WHERE Username = @parentUsername;
+
+    UPDATE Users
+    SET FullName = @parentFullName,
+        Email = @parentEmail,
+        Phone = N'09' + RIGHT('00000000' + CAST(900000000 + @i AS VARCHAR(10)), 8),
+        IsActive = 1
+    WHERE UserId = @parentUserId;
+
+    IF NOT EXISTS (SELECT 1 FROM Parents WHERE UserId = @parentUserId)
+        INSERT INTO Parents (ParentId, UserId, Occupation, Address, CreatedAt)
+        VALUES (NEWID(), @parentUserId, @parentOccupation, @parentAddress, SYSDATETIME());
+    ELSE
+        UPDATE Parents
+        SET Occupation = @parentOccupation,
+            Address = @parentAddress
+        WHERE UserId = @parentUserId;
+
+    SELECT @parentId = ParentId FROM Parents WHERE UserId = @parentUserId;
+
+    IF NOT EXISTS (SELECT 1 FROM Users WHERE Username = @studentUsername)
+        INSERT INTO Users (UserId, RoleId, Username, PasswordHash, FullName, Email, Phone, IsActive)
+        VALUES (NEWID(), @rStudent, @studentUsername, HASHBYTES('SHA2_256', N'Student@123'),
+                @studentFullName, @studentEmail,
+                N'08' + RIGHT('00000000' + CAST(900000000 + @i AS VARCHAR(10)), 8), 1);
+
+    SELECT @studentUserId = UserId FROM Users WHERE Username = @studentUsername;
+
+    UPDATE Users
+    SET FullName = @studentFullName,
+        Email = @studentEmail,
+        Phone = N'08' + RIGHT('00000000' + CAST(900000000 + @i AS VARCHAR(10)), 8),
+        IsActive = 1
+    WHERE UserId = @studentUserId;
+
+    IF NOT EXISTS (SELECT 1 FROM Students WHERE StudentCode = @studentCode)
+        INSERT INTO Students (StudentId, UserId, StudentCode, DateOfBirth, Gender, Address, AdmissionDate, Status, CurrentGrade, CreatedAt)
+        VALUES (NEWID(), @studentUserId, @studentCode, @studentDob, @studentGender, @studentAddress, @studentAdmissionDate, @studentStatus, @studentGrade, SYSDATETIME());
+    ELSE
+        UPDATE Students
+        SET UserId = @studentUserId,
+            DateOfBirth = @studentDob,
+            Gender = @studentGender,
+            Address = @studentAddress,
+            AdmissionDate = @studentAdmissionDate,
+            Status = @studentStatus,
+            CurrentGrade = @studentGrade
+        WHERE StudentCode = @studentCode;
+
+    SELECT @studentId = StudentId FROM Students WHERE StudentCode = @studentCode;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM StudentParentLinks
+        WHERE StudentId = @studentId AND ParentId = @parentId
+    )
+        INSERT INTO StudentParentLinks (StudentId, ParentId, Relationship, IsPrimaryContact)
+        VALUES (@studentId, @parentId, @parentRelationship, 1);
+    ELSE
+        UPDATE StudentParentLinks
+        SET Relationship = @parentRelationship,
+            IsPrimaryContact = 1
+        WHERE StudentId = @studentId AND ParentId = @parentId;
+
     SET @i = @i + 1;
 END;
 
--- GRADE 11: 30 students in 3 classes (11A1, 11A2, 11A3)
-WHILE @i <= 60
-BEGIN
-    SET @ParentUserId = NEWID();
-    INSERT INTO Users (UserId, RoleId, Username, PasswordHash, FullName, Email, Phone, IsActive)
-    VALUES (@ParentUserId, @rParent, N'parent.s' + RIGHT('000' + CAST(@i AS VARCHAR), 3), 
-            HASHBYTES('SHA2_256', N'Parent@123'), N'Parent S' + RIGHT('000' + CAST(@i AS VARCHAR), 3),
-            N'parent.s' + RIGHT('000' + CAST(@i AS VARCHAR), 3) + N'@estudiez.edu.vn', 
-            N'09' + RIGHT('00000000' + CAST(900000000 + @i AS VARCHAR), 8), 1);
-    
-    SET @ParentId = NEWID();
-    INSERT INTO Parents (ParentId, UserId, CreatedAt) 
-    VALUES (@ParentId, @ParentUserId, SYSDATETIME());
-    
-    SET @UserId = NEWID();
-    INSERT INTO Users (UserId, RoleId, Username, PasswordHash, FullName, Email, Phone, IsActive)
-    VALUES (@UserId, @rStudent, N'student.s' + RIGHT('000' + CAST(@i AS VARCHAR), 3),
-            HASHBYTES('SHA2_256', N'Student@123'), N'Student S' + RIGHT('000' + CAST(@i AS VARCHAR), 3),
-            N'student.s' + RIGHT('000' + CAST(@i AS VARCHAR), 3) + N'@estudiez.edu.vn',
-            N'08' + RIGHT('00000000' + CAST(900000000 + @i AS VARCHAR), 8), 1);
-    
-    SET @StudentId = NEWID();
-    INSERT INTO Students (StudentId, UserId, StudentCode, AdmissionDate, Status, CreatedAt)
-    VALUES (@StudentId, @UserId, N'STU' + RIGHT('000' + CAST(@i AS VARCHAR), 3), CAST(GETDATE() AS DATE), N'ACTIVE', SYSDATETIME());
-    
-    SET @i = @i + 1;
-END;
-
--- GRADE 12 ACTIVE: 30 students in 3 classes (12A1, 12A2, 12A3)
-WHILE @i <= 90
-BEGIN
-    SET @ParentUserId = NEWID();
-    INSERT INTO Users (UserId, RoleId, Username, PasswordHash, FullName, Email, Phone, IsActive)
-    VALUES (@ParentUserId, @rParent, N'parent.s' + RIGHT('000' + CAST(@i AS VARCHAR), 3), 
-            HASHBYTES('SHA2_256', N'Parent@123'), N'Parent S' + RIGHT('000' + CAST(@i AS VARCHAR), 3),
-            N'parent.s' + RIGHT('000' + CAST(@i AS VARCHAR), 3) + N'@estudiez.edu.vn', 
-            N'09' + RIGHT('00000000' + CAST(900000000 + @i AS VARCHAR), 8), 1);
-    
-    SET @ParentId = NEWID();
-    INSERT INTO Parents (ParentId, UserId, CreatedAt) 
-    VALUES (@ParentId, @ParentUserId, SYSDATETIME());
-    
-    SET @UserId = NEWID();
-    INSERT INTO Users (UserId, RoleId, Username, PasswordHash, FullName, Email, Phone, IsActive)
-    VALUES (@UserId, @rStudent, N'student.s' + RIGHT('000' + CAST(@i AS VARCHAR), 3),
-            HASHBYTES('SHA2_256', N'Student@123'), N'Student S' + RIGHT('000' + CAST(@i AS VARCHAR), 3),
-            N'student.s' + RIGHT('000' + CAST(@i AS VARCHAR), 3) + N'@estudiez.edu.vn',
-            N'08' + RIGHT('00000000' + CAST(900000000 + @i AS VARCHAR), 8), 1);
-    
-    SET @StudentId = NEWID();
-    INSERT INTO Students (StudentId, UserId, StudentCode, AdmissionDate, Status, CreatedAt)
-    VALUES (@StudentId, @UserId, N'STU' + RIGHT('000' + CAST(@i AS VARCHAR), 3), CAST(GETDATE() AS DATE), N'ACTIVE', SYSDATETIME());
-    
-    SET @i = @i + 1;
-END;
-
--- GRADE 12 GRADUATED: 30 students
-WHILE @i <= 120
-BEGIN
-    SET @ParentUserId = NEWID();
-    INSERT INTO Users (UserId, RoleId, Username, PasswordHash, FullName, Email, Phone, IsActive)
-    VALUES (@ParentUserId, @rParent, N'parent.s' + RIGHT('000' + CAST(@i AS VARCHAR), 3), 
-            HASHBYTES('SHA2_256', N'Parent@123'), N'Parent S' + RIGHT('000' + CAST(@i AS VARCHAR), 3),
-            N'parent.s' + RIGHT('000' + CAST(@i AS VARCHAR), 3) + N'@estudiez.edu.vn', 
-            N'09' + RIGHT('00000000' + CAST(900000000 + @i AS VARCHAR), 8), 1);
-    
-    SET @ParentId = NEWID();
-    INSERT INTO Parents (ParentId, UserId, CreatedAt) 
-    VALUES (@ParentId, @ParentUserId, SYSDATETIME());
-    
-    SET @UserId = NEWID();
-    INSERT INTO Users (UserId, RoleId, Username, PasswordHash, FullName, Email, Phone, IsActive)
-    VALUES (@UserId, @rStudent, N'student.s' + RIGHT('000' + CAST(@i AS VARCHAR), 3) + N'_g',
-            HASHBYTES('SHA2_256', N'Student@123'), N'Student S' + RIGHT('000' + CAST(@i AS VARCHAR), 3) + N' (Grad)',
-            N'student.s' + RIGHT('000' + CAST(@i AS VARCHAR), 3) + N'_g@estudiez.edu.vn',
-            N'08' + RIGHT('00000000' + CAST(900000000 + @i AS VARCHAR), 8), 1);
-    
-    SET @StudentId = NEWID();
-    INSERT INTO Students (StudentId, UserId, StudentCode, AdmissionDate, Status, CreatedAt)
-    VALUES (@StudentId, @UserId, N'STU' + RIGHT('000' + CAST(@i AS VARCHAR), 3) + N'G', CAST(GETDATE() AS DATE), N'GRADUATED', SYSDATETIME());
-    
-    SET @i = @i + 1;
-END;
-
--- PENDING GRADE ASSIGNMENT: 30 students  
-WHILE @i <= 150
-BEGIN
-    SET @ParentUserId = NEWID();
-    INSERT INTO Users (UserId, RoleId, Username, PasswordHash, FullName, Email, Phone, IsActive)
-    VALUES (@ParentUserId, @rParent, N'parent.s' + RIGHT('000' + CAST(@i AS VARCHAR), 3), 
-            HASHBYTES('SHA2_256', N'Parent@123'), N'Parent S' + RIGHT('000' + CAST(@i AS VARCHAR), 3),
-            N'parent.s' + RIGHT('000' + CAST(@i AS VARCHAR), 3) + N'@estudiez.edu.vn', 
-            N'09' + RIGHT('00000000' + CAST(900000000 + @i AS VARCHAR), 8), 1);
-    
-    SET @ParentId = NEWID();
-    INSERT INTO Parents (ParentId, UserId, CreatedAt) 
-    VALUES (@ParentId, @ParentUserId, SYSDATETIME());
-    
-    SET @UserId = NEWID();
-    INSERT INTO Users (UserId, RoleId, Username, PasswordHash, FullName, Email, Phone, IsActive)
-    VALUES (@UserId, @rStudent, N'student.s' + RIGHT('000' + CAST(@i AS VARCHAR), 3) + N'_p',
-            HASHBYTES('SHA2_256', N'Student@123'), N'Student S' + RIGHT('000' + CAST(@i AS VARCHAR), 3) + N' (Pending)',
-            N'student.s' + RIGHT('000' + CAST(@i AS VARCHAR), 3) + N'_p@estudiez.edu.vn',
-            N'08' + RIGHT('00000000' + CAST(900000000 + @i AS VARCHAR), 8), 1);
-    
-    SET @StudentId = NEWID();
-    INSERT INTO Students (StudentId, UserId, StudentCode, AdmissionDate, Status, CreatedAt)
-    VALUES (@StudentId, @UserId, N'STU' + RIGHT('000' + CAST(@i AS VARCHAR), 3) + N'P', CAST(GETDATE() AS DATE), N'PENDING_GRADE_ASSIGNMENT', SYSDATETIME());
-    
-    SET @i = @i + 1;
-END;
-
--- Link 90 active students to their classes via ClassEnrollments
 PRINT N'Linking students to classes...';
 
-DECLARE @c10A1 INT = (SELECT ClassId FROM Classes WHERE Name = N'10A1');
-DECLARE @c10A2 INT = (SELECT ClassId FROM Classes WHERE Name = N'10A2');
-DECLARE @c10A3 INT = (SELECT ClassId FROM Classes WHERE Name = N'10A3');
-DECLARE @c11A1 INT = (SELECT ClassId FROM Classes WHERE Name = N'11A1');
-DECLARE @c11A2 INT = (SELECT ClassId FROM Classes WHERE Name = N'11A2');
-DECLARE @c11A3 INT = (SELECT ClassId FROM Classes WHERE Name = N'11A3');
-DECLARE @c12A1 INT = (SELECT ClassId FROM Classes WHERE Name = N'12A1');
-DECLARE @c12A2 INT = (SELECT ClassId FROM Classes WHERE Name = N'12A2');
-DECLARE @c12A3 INT = (SELECT ClassId FROM Classes WHERE Name = N'12A3');
+DECLARE @c10A1R INT = (SELECT ClassId FROM Classes WHERE Name = N'10A1' AND SchoolYearId = @syYear);
+DECLARE @c10A2R INT = (SELECT ClassId FROM Classes WHERE Name = N'10A2' AND SchoolYearId = @syYear);
+DECLARE @c10A3R INT = (SELECT ClassId FROM Classes WHERE Name = N'10A3' AND SchoolYearId = @syYear);
+DECLARE @c11A1R INT = (SELECT ClassId FROM Classes WHERE Name = N'11A1' AND SchoolYearId = @syYear);
+DECLARE @c11A2R INT = (SELECT ClassId FROM Classes WHERE Name = N'11A2' AND SchoolYearId = @syYear);
+DECLARE @c11A3R INT = (SELECT ClassId FROM Classes WHERE Name = N'11A3' AND SchoolYearId = @syYear);
+DECLARE @c12A1R INT = (SELECT ClassId FROM Classes WHERE Name = N'12A1' AND SchoolYearId = @syYear);
+DECLARE @c12A2R INT = (SELECT ClassId FROM Classes WHERE Name = N'12A2' AND SchoolYearId = @syYear);
+DECLARE @c12A3R INT = (SELECT ClassId FROM Classes WHERE Name = N'12A3' AND SchoolYearId = @syYear);
 
--- Grade 10 students (STU001-STU030): Distribute across 10A1, 10A2, 10A3
-INSERT INTO ClassEnrollments (ClassId, StudentId, EnrolledAt, Status)
-SELECT 
-    CASE WHEN (ROW_NUMBER() OVER(ORDER BY s.StudentId) - 1) % 3 = 0 THEN @c10A1
-         WHEN (ROW_NUMBER() OVER(ORDER BY s.StudentId) - 1) % 3 = 1 THEN @c10A2
-         ELSE @c10A3 END,
-    s.StudentId,
-    CAST(GETDATE() AS DATE),
-    N'ACTIVE'
+-- Force-normalize the 90 active canonical students in case of partial/failed prior runs.
+UPDATE s
+SET s.Status = N'ACTIVE',
+        s.CurrentGrade = CASE
+                WHEN seq BETWEEN 1 AND 30 THEN 10
+                WHEN seq BETWEEN 31 AND 60 THEN 11
+                ELSE 12
+        END
 FROM Students s
-INNER JOIN Users u ON s.UserId = u.UserId
-WHERE s.Status = N'ACTIVE' AND u.RoleId = (SELECT RoleId FROM Roles WHERE Code = N'STUDENT')
-  AND s.StudentCode LIKE N'STU[0-2][0-9][0-9]';
+CROSS APPLY (SELECT TRY_CONVERT(INT, SUBSTRING(s.StudentCode, 4, 3)) AS seq) x
+WHERE s.StudentCode LIKE N'STU[0-9][0-9][0-9]'
+    AND (x.seq BETWEEN 1 AND 90 OR x.seq BETWEEN 151 AND 170);
 
--- Grade 11 students (STU031-STU060): Distribute across 11A1, 11A2, 11A3
-INSERT INTO ClassEnrollments (ClassId, StudentId, EnrolledAt, Status)
-SELECT 
-    CASE WHEN (ROW_NUMBER() OVER(ORDER BY s.StudentId) - 1) % 3 = 0 THEN @c11A1
-         WHEN (ROW_NUMBER() OVER(ORDER BY s.StudentId) - 1) % 3 = 1 THEN @c11A2
-         ELSE @c11A3 END,
-    s.StudentId,
-    CAST(GETDATE() AS DATE),
-    N'ACTIVE'
+UPDATE s
+SET s.CurrentGrade = 10
 FROM Students s
-INNER JOIN Users u ON s.UserId = u.UserId
-WHERE s.Status = N'ACTIVE' AND u.RoleId = (SELECT RoleId FROM Roles WHERE Code = N'STUDENT')
-  AND s.StudentCode LIKE N'STU[0-2][0-9][0-9]'
-  AND NOT EXISTS (
-    SELECT 1 FROM ClassEnrollments WHERE StudentId = s.StudentId
-  )
-  AND s.StudentId IN (
-    SELECT s2.StudentId FROM Students s2
-    INNER JOIN Users u2 ON s2.UserId = u2.UserId
-    WHERE s2.Status = N'ACTIVE' AND u2.RoleId = (SELECT RoleId FROM Roles WHERE Code = N'STUDENT')
-    ORDER BY s2.StudentId OFFSET 30 ROWS FETCH NEXT 30 ROWS ONLY
-  );
+CROSS APPLY (SELECT TRY_CONVERT(INT, SUBSTRING(s.StudentCode, 4, 3)) AS seq) x
+WHERE s.StudentCode LIKE N'STU[0-9][0-9][0-9]'
+    AND x.seq BETWEEN 151 AND 170;
 
--- Grade 12 active students (STU061-STU090): Distribute across 12A1, 12A2, 12A3
+DELETE ce
+FROM ClassEnrollments ce
+INNER JOIN Students s ON s.StudentId = ce.StudentId
+WHERE s.StudentCode LIKE N'STU[0-9][0-9][0-9]'
+    AND (TRY_CONVERT(INT, SUBSTRING(s.StudentCode, 4, 3)) BETWEEN 1 AND 90
+         OR TRY_CONVERT(INT, SUBSTRING(s.StudentCode, 4, 3)) BETWEEN 151 AND 170);
+
+-- Hardcoded class distribution (10 students per class)
 INSERT INTO ClassEnrollments (ClassId, StudentId, EnrolledAt, Status)
-SELECT 
-    CASE WHEN (ROW_NUMBER() OVER(ORDER BY s.StudentId) - 1) % 3 = 0 THEN @c12A1
-         WHEN (ROW_NUMBER() OVER(ORDER BY s.StudentId) - 1) % 3 = 1 THEN @c12A2
-         ELSE @c12A3 END,
-    s.StudentId,
-    CAST(GETDATE() AS DATE),
-    N'ACTIVE'
+SELECT @c10A1R, s.StudentId, @today, N'ACTIVE'
 FROM Students s
-INNER JOIN Users u ON s.UserId = u.UserId
-WHERE s.Status = N'ACTIVE' AND u.RoleId = (SELECT RoleId FROM Roles WHERE Code = N'STUDENT')
-  AND s.StudentCode LIKE N'STU[0-2][0-9][0-9]'
-  AND NOT EXISTS (
-    SELECT 1 FROM ClassEnrollments WHERE StudentId = s.StudentId
-  )
-  AND s.StudentId IN (
-    SELECT s2.StudentId FROM Students s2
-    INNER JOIN Users u2 ON s2.UserId = u2.UserId
-    WHERE s2.Status = N'ACTIVE' AND u2.RoleId = (SELECT RoleId FROM Roles WHERE Code = N'STUDENT')
-    ORDER BY s2.StudentId OFFSET 60 ROWS FETCH NEXT 30 ROWS ONLY
-  );
+WHERE TRY_CONVERT(INT, SUBSTRING(s.StudentCode, 4, 3)) BETWEEN 1 AND 10
+    AND s.StudentCode LIKE N'STU[0-9][0-9][0-9]'
+    AND s.Status = N'ACTIVE';
 
--- Note: Graduated students (STU*G) and Pending students (STU*P) are NOT enrolled in classes
-PRINT N'✓ Linked 90 active students to 9 classes (10 per class)';
+INSERT INTO ClassEnrollments (ClassId, StudentId, EnrolledAt, Status)
+SELECT @c10A2R, s.StudentId, @today, N'ACTIVE'
+FROM Students s
+WHERE TRY_CONVERT(INT, SUBSTRING(s.StudentCode, 4, 3)) BETWEEN 11 AND 20
+    AND s.StudentCode LIKE N'STU[0-9][0-9][0-9]'
+    AND s.Status = N'ACTIVE';
+
+INSERT INTO ClassEnrollments (ClassId, StudentId, EnrolledAt, Status)
+SELECT @c10A3R, s.StudentId, @today, N'ACTIVE'
+FROM Students s
+WHERE TRY_CONVERT(INT, SUBSTRING(s.StudentCode, 4, 3)) BETWEEN 21 AND 30
+    AND s.StudentCode LIKE N'STU[0-9][0-9][0-9]'
+    AND s.Status = N'ACTIVE';
+
+INSERT INTO ClassEnrollments (ClassId, StudentId, EnrolledAt, Status)
+SELECT @c11A1R, s.StudentId, @today, N'ACTIVE'
+FROM Students s
+WHERE TRY_CONVERT(INT, SUBSTRING(s.StudentCode, 4, 3)) BETWEEN 31 AND 40
+    AND s.StudentCode LIKE N'STU[0-9][0-9][0-9]'
+    AND s.Status = N'ACTIVE';
+
+INSERT INTO ClassEnrollments (ClassId, StudentId, EnrolledAt, Status)
+SELECT @c11A2R, s.StudentId, @today, N'ACTIVE'
+FROM Students s
+WHERE TRY_CONVERT(INT, SUBSTRING(s.StudentCode, 4, 3)) BETWEEN 41 AND 50
+    AND s.StudentCode LIKE N'STU[0-9][0-9][0-9]'
+    AND s.Status = N'ACTIVE';
+
+INSERT INTO ClassEnrollments (ClassId, StudentId, EnrolledAt, Status)
+SELECT @c11A3R, s.StudentId, @today, N'ACTIVE'
+FROM Students s
+WHERE TRY_CONVERT(INT, SUBSTRING(s.StudentCode, 4, 3)) BETWEEN 51 AND 60
+    AND s.StudentCode LIKE N'STU[0-9][0-9][0-9]'
+    AND s.Status = N'ACTIVE';
+
+INSERT INTO ClassEnrollments (ClassId, StudentId, EnrolledAt, Status)
+SELECT @c12A1R, s.StudentId, @today, N'ACTIVE'
+FROM Students s
+WHERE TRY_CONVERT(INT, SUBSTRING(s.StudentCode, 4, 3)) BETWEEN 61 AND 70
+    AND s.StudentCode LIKE N'STU[0-9][0-9][0-9]'
+    AND s.Status = N'ACTIVE';
+
+INSERT INTO ClassEnrollments (ClassId, StudentId, EnrolledAt, Status)
+SELECT @c12A2R, s.StudentId, @today, N'ACTIVE'
+FROM Students s
+WHERE TRY_CONVERT(INT, SUBSTRING(s.StudentCode, 4, 3)) BETWEEN 71 AND 80
+    AND s.StudentCode LIKE N'STU[0-9][0-9][0-9]'
+    AND s.Status = N'ACTIVE';
+
+INSERT INTO ClassEnrollments (ClassId, StudentId, EnrolledAt, Status)
+SELECT @c12A3R, s.StudentId, @today, N'ACTIVE'
+FROM Students s
+WHERE TRY_CONVERT(INT, SUBSTRING(s.StudentCode, 4, 3)) BETWEEN 81 AND 90
+    AND s.StudentCode LIKE N'STU[0-9][0-9][0-9]'
+    AND s.Status = N'ACTIVE';
+
+-- Extra 20 Grade 10 students: +10 in 10A1, +10 in 10A2
+INSERT INTO ClassEnrollments (ClassId, StudentId, EnrolledAt, Status)
+SELECT @c10A1R, s.StudentId, @today, N'ACTIVE'
+FROM Students s
+WHERE TRY_CONVERT(INT, SUBSTRING(s.StudentCode, 4, 3)) BETWEEN 151 AND 160
+    AND s.StudentCode LIKE N'STU[0-9][0-9][0-9]'
+    AND s.Status = N'ACTIVE';
+
+INSERT INTO ClassEnrollments (ClassId, StudentId, EnrolledAt, Status)
+SELECT @c10A2R, s.StudentId, @today, N'ACTIVE'
+FROM Students s
+WHERE TRY_CONVERT(INT, SUBSTRING(s.StudentCode, 4, 3)) BETWEEN 161 AND 170
+    AND s.StudentCode LIKE N'STU[0-9][0-9][0-9]'
+    AND s.Status = N'ACTIVE';
+
+PRINT N'✓ Linked 110 active students to classes (10A1=20, 10A2=20, others=10)';
+
+-- Hard assertions for deterministic seed quality
+IF EXISTS (
+    SELECT c.Name
+    FROM Classes c
+    LEFT JOIN ClassEnrollments ce ON ce.ClassId = c.ClassId AND ce.Status = N'ACTIVE'
+    LEFT JOIN Students s ON s.StudentId = ce.StudentId AND s.Status = N'ACTIVE'
+    WHERE c.SchoolYearId = @syYear
+      AND c.Name IN (N'10A1', N'10A2', N'10A3', N'11A1', N'11A2', N'11A3', N'12A1', N'12A2', N'12A3')
+    GROUP BY c.Name
+    HAVING COUNT(s.StudentId) <> CASE WHEN c.Name IN (N'10A1', N'10A2') THEN 20 ELSE 10 END
+)
+    THROW 51001, 'Seed validation failed: class counts mismatch (expected 10A1=20, 10A2=20, others=10).', 1;
+
+IF (
+    (SELECT COUNT(*) FROM Students WHERE Status = N'ACTIVE' AND CurrentGrade = 10) <> 50 OR
+    (SELECT COUNT(*) FROM Students WHERE Status = N'ACTIVE' AND CurrentGrade = 11) <> 30 OR
+    (SELECT COUNT(*) FROM Students WHERE Status = N'ACTIVE' AND CurrentGrade = 12) <> 30
+)
+    THROW 51002, 'Seed validation failed: active student grade totals are not 50/30/30 for grades 10/11/12.', 1;
 GO
 
 PRINT N'';
@@ -2085,12 +2182,12 @@ PRINT N'=======================================================';
 PRINT N'  eStudiez EXPANDED seed completed!';
 PRINT N'';
 PRINT N'  FINAL TOTALS:';
-PRINT N'  Users: 1 admin + 10 teachers + 150 students + 150 parents = 311 total';
+PRINT N'  Users: 1 admin + 10 teachers + 186 students + 186 parents = 383 total';
 PRINT N'  Students breakdown:';
-PRINT N'    - 90 active (30 Grade 10, 30 Grade 11, 30 Grade 12)';
+PRINT N'    - 110 active (50 Grade 10, 30 Grade 11, 30 Grade 12)';
 PRINT N'    - 30 graduated (Grade 12, GRADUATED status)';
 PRINT N'    - 30 pending (PENDING_GRADE_ASSIGNMENT status)';
-PRINT N'  Classes: 9 (3 per grade: 10A1-A3, 11A1-A3, 12A1-A3)';
+PRINT N'  Classes: 9 (10A1=20, 10A2=20, others=10 active students)';
 PRINT N'';
 PRINT N'  Sample credentials:';
 PRINT N'  admin            / Admin@123';
