@@ -836,6 +836,125 @@ class _StudentDashboardState extends State<StudentDashboard> {
   }
 
   // ─── MARKS TAB ───
+  void _showEvaluationDetailsSheet(BuildContext context, ScoreDetail mark, Color color) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.6,
+          minChildSize: 0.4,
+          maxChildSize: 0.9,
+          builder: (context, scrollController) {
+            return SingleChildScrollView(
+              controller: scrollController,
+              padding: const EdgeInsets.all(20.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 50,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[300],
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    mark.subject,
+                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                  Text(
+                    mark.description,
+                    style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Score:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: color.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '${mark.scoreReceived} / 10',
+                          style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 30),
+                  if (mark.strengths != null && mark.strengths!.isNotEmpty) ...[
+                    const Text('✅ Strengths:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.green)),
+                    const SizedBox(height: 6),
+                    Text(mark.strengths!, style: const TextStyle(fontSize: 14)),
+                    const SizedBox(height: 16),
+                  ],
+                  if (mark.weaknesses != null && mark.weaknesses!.isNotEmpty) ...[
+                    const Text('⚠️ Areas to Improve:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.orange)),
+                    const SizedBox(height: 6),
+                    Text(mark.weaknesses!, style: const TextStyle(fontSize: 14)),
+                    const SizedBox(height: 16),
+                  ],
+                  if (mark.suggestedPath != null && mark.suggestedPath!.isNotEmpty) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.indigo[50],
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.indigo[100]!),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Row(
+                            children: [
+                              Icon(Icons.psychology, color: Colors.indigo),
+                              SizedBox(width: 8),
+                              Text(
+                                'AI Suggested Learning Path',
+                                style: TextStyle(fontWeight: FontWeight.bold, color: Colors.indigo, fontSize: 15),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            mark.suggestedPath!,
+                            style: const TextStyle(fontSize: 13, height: 1.5, color: Colors.black87),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ] else ...[
+                    const Center(
+                      child: Text(
+                        'No detailed AI learning path generated for this assessment.',
+                        style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 20),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   Widget _buildMarksTab() {
     final lang = Provider.of<LanguageProvider>(context);
     final filtered = _marks.where((m) => m.semesterId == _selectedSemester).toList();
@@ -860,6 +979,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
                     return Card(
                       margin: const EdgeInsets.symmetric(vertical: 8),
                       child: ListTile(
+                        onTap: () => _showEvaluationDetailsSheet(context, mark, color),
                         leading: CircleAvatar(
                           backgroundColor: color.withOpacity(0.1),
                           child: Text(
@@ -869,12 +989,28 @@ class _StudentDashboardState extends State<StudentDashboard> {
                         ),
                         title: Text(mark.subject, style: const TextStyle(fontWeight: FontWeight.bold)),
                         subtitle: Text('${mark.description}\nDate: ${mark.date.substring(0, 10)}'),
+                        trailing: const Icon(Icons.chevron_right, color: Colors.grey),
                         isThreeLine: true,
                       ),
                     );
                   },
                 ),
         ),
+        if (filtered.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.all(12.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.info_outline, size: 16, color: Colors.grey[600]),
+                const SizedBox(width: 6),
+                Text(
+                  'Tap on any card to view detailed feedback & AI Path',
+                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                ),
+              ],
+            ),
+          ),
       ],
     );
   }

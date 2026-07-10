@@ -8,7 +8,7 @@ export default defineConfig({
   server: {
     proxy: {
       // Proxy /api/* to the Spring Boot backend, avoiding CORS in dev
-      '/api': 'http://localhost:8081',
+      '/api': 'http://127.0.0.1:8081',
     },
   },
 })

@@ -61,7 +61,6 @@ import {
   mapApiUsersToFrontend,
   SUBJECT_ID_MAP,
   SEMESTER_ID_MAP,
-  submitRegistrationApi,
   saveMarkApi,
   sendChatMessage,
   type ApiAssessment,

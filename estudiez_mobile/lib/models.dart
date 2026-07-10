@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 class User {
   final String? userId;
   final String username;
@@ -318,6 +320,9 @@ class ScoreDetail {
   final String date;
   final double scoreReceived;
   final int semesterId;
+  final String? strengths;
+  final String? weaknesses;
+  final String? suggestedPath;
 
   ScoreDetail({
     required this.id,
@@ -329,11 +334,30 @@ class ScoreDetail {
     required this.date,
     required this.scoreReceived,
     this.semesterId = 1,
+    this.strengths,
+    this.weaknesses,
+    this.suggestedPath,
   });
 
   factory ScoreDetail.fromJson(Map<String, dynamic> json, Map<String, dynamic> assessmentJson, Map<int, String> subjectMap, Map<String, String> userEmailsMap) {
     final sId = assessmentJson['subjectId'] ?? 0;
     final studId = json['studentId'] ?? '';
+    
+    String? strengths;
+    String? weaknesses;
+    String? suggestedPath;
+    final remarkStr = json['remark'] as String?;
+    if (remarkStr != null && remarkStr.trim().startsWith('{')) {
+      try {
+        final parsed = jsonDecode(remarkStr);
+        strengths = parsed['strengths'] as String?;
+        weaknesses = parsed['weaknesses'] as String?;
+        suggestedPath = parsed['suggestedPath'] as String?;
+      } catch (e) {
+        print('Error parsing remark JSON in ScoreDetail: $e');
+      }
+    }
+
     return ScoreDetail(
       id: json['studentMarkId'] ?? 0,
       studentEmail: userEmailsMap[studId] ?? studId,
@@ -344,6 +368,9 @@ class ScoreDetail {
       date: assessmentJson['assessmentDate'] ?? '',
       scoreReceived: (json['score'] ?? 0.0).toDouble(),
       semesterId: assessmentJson['semesterId'] ?? 1,
+      strengths: strengths,
+      weaknesses: weaknesses,
+      suggestedPath: suggestedPath,
     );
   }
 }

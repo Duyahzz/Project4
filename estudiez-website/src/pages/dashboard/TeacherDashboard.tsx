@@ -828,26 +828,109 @@ const STUDY_HABITS_OPTIONS: { value: string; label: string }[] = [
 function buildAIPath(f: StudentEntry, examName: string): string {
   const perf = PERFORMANCE_LEVELS.find((p) => p.value === f.performanceLevel)?.label ?? f.performanceLevel
   const habits = STUDY_HABITS_OPTIONS.find((h) => h.value === f.studyHabits)?.label ?? f.studyHabits
+  const scoreNum = parseFloat(f.score) || 0
   const scoreStr = f.score ? ` | Score: ${f.score}/10` : ''
+
+  // 1. Determine Level and customized roadmap
+  let roadmap: string[] = []
+  let learningStrategy = ""
+  
+  if (scoreNum < 5 || f.performanceLevel === 'below-average' || f.performanceLevel === 'poor' || f.performanceLevel === 'weak') {
+    // WEAK / UNDERPERFORMING
+    learningStrategy = "Focus on foundational concepts. Don't rush into complex exercises."
+    roadmap = [
+      `  • Phase 1 (Week 1): Fundamentals Review`,
+      `    - Read textbook chapter summary for: "${f.topicsToImprove || f.weaknesses}"`,
+      `    - Re-watch basic video tutorials and compile a list of core definitions.`,
+      `  • Phase 2 (Week 2): Step-by-Step Practice`,
+      `    - Solve 3-5 basic level-1 questions daily on "${f.topicsToImprove || f.weaknesses}"`,
+      `    - Highlight formulas and show all working steps. Ask the teacher if stuck.`,
+      `  • Phase 3 (Week 3): Re-evaluate & Consolidate`,
+      `    - Redo the questions missed in "${examName}".`,
+      `    - Seek a 15-minute review session with the teacher or a peer tutor.`,
+      `  • Phase 4 (Week 4): Foundation Check`,
+      `    - Take a basic mock test under no time limit to verify understanding.`
+    ]
+  } else if (scoreNum >= 5 && scoreNum < 7 || f.performanceLevel === 'average') {
+    // AVERAGE / PASSING
+    learningStrategy = "Active recall & error analysis. Build confidence through structured practice."
+    roadmap = [
+      `  • Phase 1 (Week 1): Error Diagnosis`,
+      `    - Carefully write down why mistakes were made in "${examName}".`,
+      `    - Revise key formulas and concepts for: "${f.topicsToImprove || f.weaknesses}"`,
+      `  • Phase 2 (Week 2): Targeted Homework`,
+      `    - Complete all standard textbook exercises on "${f.topicsToImprove || f.weaknesses}"`,
+      `    - Focus on intermediate level word problems.`,
+      `  • Phase 3 (Week 3): Active Recall`,
+      `    - Create flashcards for core terms or formulas.`,
+      `    - Practice explaining the concepts to a classmate or family member.`,
+      `  • Phase 4 (Week 4): Mock Testing`,
+      `    - Take a timed mock test on the unit to improve speed and reduce exam anxiety.`
+    ]
+  } else if (scoreNum >= 7 && scoreNum < 9 || f.performanceLevel === 'good') {
+    // GOOD / PROFICIENT
+    learningStrategy = "Feynman Technique & Advanced problem solving to transition to excellence."
+    roadmap = [
+      `  • Phase 1 (Week 1): Advanced Concept Integration`,
+      `    - Study the connection between "${f.topicsMastered || f.strengths}" and "${f.topicsToImprove || f.weaknesses}".`,
+      `    - Write a one-page mindmap summarizing the entire topic.`,
+      `  • Phase 2 (Week 2): Challenge Exercises`,
+      `    - Solve advanced (starred) level questions on: "${f.topicsToImprove || f.weaknesses}"`,
+      `    - Learn to identify shortcut methods for faster calculation.`,
+      `  • Phase 3 (Week 3): Teach to Learn (Feynman)`,
+      `    - Help a classmate who is struggling with "${f.topicsMastered || f.strengths}".`,
+      `    - Explaining it to others will solidify your own high-level understanding.`,
+      `  • Phase 4 (Week 4): Time Management Exam Prep`,
+      `    - Complete practice papers under strict exam time constraints (e.g. 45 mins).`
+    ]
+  } else {
+    // EXCELLENT
+    learningStrategy = "Creative application & peer mentorship. Maintain elite performance."
+    roadmap = [
+      `  • Phase 1 (Week 1): Deep Exploration`,
+      `    - Explore real-world applications or extra-curricular resources related to "${f.topicsMastered || f.strengths}".`,
+      `    - Try solving Olympiad or competitive exam level problems.`,
+      `  • Phase 2 (Week 2): Project-based Learning`,
+      `    - Create a mini-project, coding poster, or summary document explaining: "${f.topicsMastered || f.strengths}"`,
+      `  • Phase 3 (Week 3): Peer Tutoring`,
+      `    - Act as a student mentor in class. Help explain difficult concepts to peers.`,
+      `  • Phase 4 (Week 4): Self-Directed Goals`,
+      `    - Work with the teacher to outline personal learning goals for the next unit.`
+    ]
+  }
+
+  // 2. Study Habit Recommendation
+  let habitAdvice = ""
+  if (f.studyHabits === 'needs-work') {
+    habitAdvice = `  → Urgent Intervention: Set up a structured 20-minute daily study block. Ask parents to sign a daily study log. Use website study resources.`
+  } else if (f.studyHabits === 'irregular') {
+    habitAdvice = `  → Action Needed: Establish a consistent weekly schedule (e.g. Tuesday/Thursday at 7 PM). Use the Pomodoro technique (25 min study, 5 min break) to combat procrastination.`
+  } else {
+    habitAdvice = `  → Keep it up! Optimize your study environment by removing distractions (phone in another room) and trying active recall retrieval practice.`
+  }
+
   return [
-    `📊 Performance: ${perf}${scoreStr} | Exam: ${examName}`,
+    `📊 Performance Summary: ${perf}${scoreStr}`,
+    `📝 Assessment: ${examName}`,
+    `--------------------------------------------------`,
+    `✅ Key Strengths:`,
+    `  • Demonstrated strength in: "${f.strengths}"`,
+    f.topicsMastered ? `  • Confirmed mastery of: "${f.topicsMastered}"` : '',
     '',
-    `✅ Strengths: ${f.strengths}`,
-    f.topicsMastered ? `🎯 Topics mastered: ${f.topicsMastered}` : '',
+    `⚠️ Improvement Focus:`,
+    `  • Target weakness: "${f.weaknesses}"`,
+    f.topicsToImprove ? `  • Priority topic: "${f.topicsToImprove}"` : '',
     '',
-    `⚠️ Areas to improve: ${f.weaknesses}`,
-    f.topicsToImprove ? `📌 Priority topics: ${f.topicsToImprove}` : '',
+    `🧠 Core Learning Strategy:`,
+    `  "${learningStrategy}"`,
     '',
-    `📚 Recommended study plan:`,
-    `  • Week 1–2: Focused daily practice on "${f.topicsToImprove || f.weaknesses}" (30 min/day)`,
-    `  • Week 3–4: Mixed exercises reinforcing "${f.topicsMastered || f.strengths}"`,
-    `  • End of month: Re-test on priority topics`,
+    `📅 Personalized 4-Week Improvement Path:`,
+    ...roadmap,
     '',
-    `🧑‍💼 Study habits: ${habits}`,
-    f.studyHabits !== 'consistent'
-      ? `  → Recommendation: Set a fixed daily study schedule and track completion.`
-      : `  → Great consistency — keep it up!`,
-    f.teacherNotes ? `\n📝 Teacher notes: ${f.teacherNotes}` : '',
+    `🧑‍💼 Study Habits & Consistency:`,
+    `  • Status: ${habits}`,
+    habitAdvice,
+    f.teacherNotes ? `\n📝 Teacher Guidance Notes:\n  "${f.teacherNotes}"` : '',
   ].filter(Boolean).join('\n')
 }
 
@@ -1316,7 +1399,25 @@ function MarksEvalTab({
                       max={10}
                       step={0.1}
                       value={entry.score}
-                      onChange={(e) => updateEntry(expandedEmail, { score: e.target.value })}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        const scoreNum = parseFloat(val)
+                        let matchedPerf = entry.performanceLevel
+                        if (!isNaN(scoreNum)) {
+                          if (scoreNum < 3.5) {
+                            matchedPerf = 'poor'
+                          } else if (scoreNum >= 3.5 && scoreNum < 5) {
+                            matchedPerf = 'below-average'
+                          } else if (scoreNum >= 5 && scoreNum < 7) {
+                            matchedPerf = 'average'
+                          } else if (scoreNum >= 7 && scoreNum < 9) {
+                            matchedPerf = 'good'
+                          } else if (scoreNum >= 9) {
+                            matchedPerf = 'excellent'
+                          }
+                        }
+                        updateEntry(expandedEmail, { score: val, performanceLevel: matchedPerf })
+                      }}
                       placeholder="e.g. 8.5"
                       className={`w-32 rounded-md border px-3 py-1.5 text-sm ${
                         scoreErrors[expandedEmail] ? 'border-rose-400 bg-rose-50' : 'border-slate-300'
@@ -1335,7 +1436,8 @@ function MarksEvalTab({
                     label="Performance Level"
                     name={`perf-${expandedEmail}`}
                     value={entry.performanceLevel}
-                    onChange={(e) => updateEntry(expandedEmail, { performanceLevel: e.target.value })}
+                    disabled={true}
+                    hint="Calculated automatically based on the score above"
                   >
                     {PERFORMANCE_LEVELS.map((p) => (
                       <option key={p.value} value={p.value}>{p.label}</option>
