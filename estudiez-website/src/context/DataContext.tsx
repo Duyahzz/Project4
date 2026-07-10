@@ -31,6 +31,7 @@ import {
   deleteApiUser,
   deleteApiNotification as deleteApiNotificationApi,
   getAssessments,
+  createApiAssessment,
   getClasses,
   getClassEnrollments,
   getChatGroups,
@@ -64,6 +65,7 @@ import {
   mapApiUsersToFrontend,
   rejectRegistrationApi,
   SUBJECT_ID_MAP,
+  SEMESTER_ID_MAP,
   submitRegistrationApi,
   saveMarkApi,
   sendChatMessage,
@@ -106,7 +108,7 @@ interface DataContextValue {
   addSemester: (semester: Semester) => void
   updateSemester: (id: string, patch: Partial<Omit<Semester, 'id'>>) => void
   deleteSemester: (id: string) => void
-  addExam: (exam: Omit<Exam, 'id'>) => void
+  addExam: (exam: Omit<Exam, 'id'>, teacherEmail: string) => Promise<void>
   updateExam: (id: number, patch: Partial<Omit<Exam, 'id'>>) => void
   deleteExam: (id: number) => void
   addScore: (score: Omit<ScoreDetail, 'id'>) => void
@@ -588,7 +590,28 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setExams((prev) => prev.filter((e) => e.semesterId !== id))
   }, [])
   const addExam = useCallback(
-    (exam: Omit<Exam, 'id'>) => setExams((prev) => [...prev, { ...exam, id: nextId(prev) }]),
+    async (exam: Omit<Exam, 'id'>, teacherEmail: string) => {
+      const subjectId = Number(Object.entries(SUBJECT_ID_MAP).find(([_, val]) => val === exam.subject)?.[0] ?? 0)
+      const semesterId = Number(Object.entries(SEMESTER_ID_MAP).find(([_, val]) => val === exam.semesterId)?.[0] ?? 1)
+      const tId = teacherIdByEmail.current.get(teacherEmail.toLowerCase()) || '00000000-0000-0000-0000-000000000000'
+      try {
+        const created = await createApiAssessment({
+          classId: Number(exam.classId),
+          subjectId,
+          semesterId,
+          assessmentTypeId: 1, // default type
+          title: exam.name,
+          assessmentDate: exam.date,
+          maxScore: 10,
+          weight: exam.weight ?? 0.1,
+          status: exam.completed ? 'COMPLETED' : 'SCHEDULED',
+          teacherId: tId as any,
+        })
+        setExams((prev) => [...prev, mapApiAssessmentToExam(created)])
+      } catch (err) {
+        console.error('Failed to create assessment:', err)
+      }
+    },
     [],
   )
   const updateExam = useCallback(

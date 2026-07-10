@@ -677,6 +677,11 @@ function AttendanceTab({ subject, classIds, studentsByClass }: AttendanceTabProp
 
             {/* Modal body */}
             <div className="overflow-y-auto flex-1 px-5 py-4">
+              {isAlreadyTaken(activeSlot) && (
+                <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-lg text-xs flex items-center gap-2 mb-4 font-medium">
+                  <span>⚠️ Attendance has been saved and is locked. You cannot modify it.</span>
+                </div>
+              )}
               {(studentsByClass.get(activeSlot.classId) ?? []).length === 0 ? (
                 <p className="text-sm text-slate-500">No students in this class.</p>
               ) : (
@@ -713,6 +718,7 @@ function AttendanceTab({ subject, classIds, studentsByClass }: AttendanceTabProp
                           </button>
                         </div>
                         <select
+                          disabled={isAlreadyTaken(activeSlot)}
                           value={statuses[student.email] ?? 'present'}
                           onChange={(e) =>
                             setStatuses((prev) => ({
@@ -720,7 +726,7 @@ function AttendanceTab({ subject, classIds, studentsByClass }: AttendanceTabProp
                               [student.email]: e.target.value as AttendanceStatus,
                             }))
                           }
-                          className="rounded-md border border-slate-300 px-2 py-1 text-sm capitalize bg-white focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
+                          className="rounded-md border border-slate-300 px-2 py-1 text-sm capitalize bg-white focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-slate-100 disabled:text-slate-500"
                         >
                           {ATTENDANCE_OPTIONS.map((opt) => (
                             <option key={opt} value={opt}>
@@ -731,6 +737,7 @@ function AttendanceTab({ subject, classIds, studentsByClass }: AttendanceTabProp
                       </div>
                       {(expandedNotes.has(student.email) || !!notes[student.email]) && (
                         <input
+                          disabled={isAlreadyTaken(activeSlot)}
                           type="text"
                           placeholder="Add note for student (e.g. late, no homework...)"
                           value={notes[student.email] ?? ''}
@@ -740,7 +747,7 @@ function AttendanceTab({ subject, classIds, studentsByClass }: AttendanceTabProp
                               [student.email]: e.target.value,
                             }))
                           }
-                          className="rounded-md border border-slate-300 px-3 py-1.5 text-xs bg-white focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 w-full mt-0.5"
+                          className="rounded-md border border-slate-300 px-3 py-1.5 text-xs bg-white focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 w-full mt-0.5 disabled:bg-slate-100 disabled:text-slate-500"
                           autoFocus
                         />
                       )}
@@ -752,17 +759,26 @@ function AttendanceTab({ subject, classIds, studentsByClass }: AttendanceTabProp
 
             {/* Modal footer */}
             <div className="flex gap-2 px-5 py-4 border-t border-slate-200">
-              <button
-                onClick={saveAttendance}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-md px-4 py-2 text-sm"
-              >
-                Save Attendance
-              </button>
+              {!isAlreadyTaken(activeSlot) ? (
+                <button
+                  onClick={saveAttendance}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-md px-4 py-2 text-sm"
+                >
+                  Save Attendance
+                </button>
+              ) : (
+                <button
+                  disabled
+                  className="bg-slate-300 text-slate-500 font-semibold rounded-md px-4 py-2 text-sm cursor-not-allowed"
+                >
+                  Attendance Locked
+                </button>
+              )}
               <button
                 onClick={() => setActiveSlot(null)}
                 className="border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium rounded-md px-4 py-2 text-sm"
               >
-                Cancel
+                {isAlreadyTaken(activeSlot) ? 'Close' : 'Cancel'}
               </button>
             </div>
           </div>
@@ -844,7 +860,7 @@ function MarksEvalTab({
   classIds: string[]
   studentsByClass: Map<string, User[]>
 }) {
-  const { semesters, exams, scores, evaluations, saveMarksAndEvaluationsBatch, classes } = useData()
+  const { semesters, exams, scores, evaluations, saveMarksAndEvaluationsBatch, classes, addExam } = useData()
   const { currentUser } = useAuth()
   const { push } = useToast()
 
@@ -866,6 +882,35 @@ function MarksEvalTab({
   const [entries, setEntries] = useState<Record<string, StudentEntry>>({})
   const [scoreErrors, setScoreErrors] = useState<Record<string, string>>({})
   const [expandedEmail, setExpandedEmail] = useState<string | null>(null)
+
+  const [showAddExam, setShowAddExam] = useState(false)
+  const [newExamName, setNewExamName] = useState('')
+  const [newExamWeight, setNewExamWeight] = useState(10)
+  const [newExamDate, setNewExamDate] = useState(() => new Date().toISOString().slice(0, 10))
+
+  const handleAddExamSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newExamName.trim()) {
+      push('error', 'Exam name is required.')
+      return
+    }
+    try {
+      await addExam({
+        classId,
+        semesterId,
+        subject,
+        name: newExamName.trim(),
+        date: newExamDate,
+        completed: false,
+        weight: newExamWeight / 100,
+      }, currentUser?.email ?? '')
+      push('success', `Exam "${newExamName.trim()}" created successfully.`)
+      setNewExamName('')
+      setShowAddExam(false)
+    } catch (err) {
+      push('error', 'Failed to create exam.')
+    }
+  }
 
   const availableExams = useMemo(
     () => exams.filter((e) => e.semesterId === semesterId && e.subject === subject && e.classId === classId),
@@ -1070,6 +1115,70 @@ function MarksEvalTab({
                             })}
                           </div>
                         )}
+
+                        <div className="mt-3 pt-2 border-t border-slate-100">
+                          {!showAddExam ? (
+                            <button
+                              onClick={() => {
+                                setShowAddExam(true);
+                                setNewExamDate(new Date().toISOString().slice(0, 10));
+                              }}
+                              className="w-full text-center text-xs py-1.5 border border-dashed border-slate-300 rounded-md hover:bg-slate-50 text-indigo-600 font-semibold"
+                            >
+                              + Add Exam
+                            </button>
+                          ) : (
+                            <form onSubmit={handleAddExamSubmit} className="space-y-2 pt-1 text-left">
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase">Exam Name</label>
+                                <input
+                                  type="text"
+                                  placeholder="e.g. Quiz 3"
+                                  value={newExamName}
+                                  onChange={(e) => setNewExamName(e.target.value)}
+                                  className="w-full text-xs rounded-md border border-slate-300 px-2 py-1 bg-white focus:ring-1 focus:ring-indigo-500 mt-0.5"
+                                />
+                              </div>
+                              <div className="grid grid-cols-2 gap-1.5">
+                                <div>
+                                  <label className="block text-[10px] font-bold text-slate-500 uppercase">Weight (%)</label>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max="100"
+                                    value={newExamWeight}
+                                    onChange={(e) => setNewExamWeight(Number(e.target.value))}
+                                    className="w-full text-xs rounded-md border border-slate-300 px-2 py-1 bg-white focus:ring-1 focus:ring-indigo-500 mt-0.5"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] font-bold text-slate-500 uppercase">Date</label>
+                                  <input
+                                    type="date"
+                                    value={newExamDate}
+                                    onChange={(e) => setNewExamDate(e.target.value)}
+                                    className="w-full text-xs rounded-md border border-slate-300 px-2 py-1 bg-white focus:ring-1 focus:ring-indigo-500 mt-0.5"
+                                  />
+                                </div>
+                              </div>
+                              <div className="flex gap-1.5 pt-1">
+                                <button
+                                  type="submit"
+                                  className="flex-1 text-center text-xs py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-md shadow-sm"
+                                >
+                                  Create
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowAddExam(false)}
+                                  className="flex-1 text-center text-xs py-1.5 border border-slate-300 hover:bg-slate-50 text-slate-600 rounded-md"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </form>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>

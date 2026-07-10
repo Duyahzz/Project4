@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/language_provider.dart';
 import '../../models.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../chat/chat_screen.dart';
 import '../profile/profile_screen.dart';
+import '../notification/notification_list_screen.dart';
 
 class StudentDashboard extends StatefulWidget {
   const StudentDashboard({Key? key}) : super(key: key);
@@ -28,11 +31,137 @@ class _StudentDashboardState extends State<StudentDashboard> {
   int _selectedSemester = 1;
   int _selectedTimetableSemester = 1;
   String _className = '';
+  int? _resolvedClassId;
+
+  DateTime? _lastReadNotificationsTime;
+  Timer? _notificationTimer;
 
   @override
   void initState() {
     super.initState();
+    _loadLastReadNotifsTime();
     _fetchStudentData();
+    _startNotificationTimer();
+  }
+
+  Future<void> _loadLastReadNotifsTime() async {
+    final prefs = await SharedPreferences.getInstance();
+    final ms = prefs.getInt('last_read_notifications_timestamp');
+    if (ms != null) {
+      setState(() {
+        _lastReadNotificationsTime = DateTime.fromMillisecondsSinceEpoch(ms);
+      });
+    }
+  }
+
+  Future<void> _updateLastReadNotifsTime() async {
+    final now = DateTime.now();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('last_read_notifications_timestamp', now.millisecondsSinceEpoch);
+    setState(() {
+      _lastReadNotificationsTime = now;
+    });
+  }
+
+  @override
+  void dispose() {
+    _notificationTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startNotificationTimer() {
+    _notificationTimer = Timer.periodic(const Duration(seconds: 10), (timer) async {
+      await _silentFetchStudentData();
+    });
+  }
+
+  Future<void> _silentFetchStudentData() async {
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+    final api = auth.apiService;
+    final String currentUserId = auth.currentUser?.userId ?? '';
+
+    try {
+      String resolvedStudentId = currentUserId;
+      try {
+        final studentsList = await api.getStudents();
+        for (var s in studentsList) {
+          if (s.userId == currentUserId) {
+            resolvedStudentId = s.studentId;
+            break;
+          }
+        }
+      } catch (e) {
+        print('Error resolving studentId: $e');
+      }
+
+      int? resolvedClassId;
+      try {
+        final enrollments = await api.getEnrollments();
+        for (var e in enrollments) {
+          if (e['studentId']?.toString() == resolvedStudentId && e['status'] == 'ACTIVE') {
+            resolvedClassId = e['classId'] as int?;
+            break;
+          }
+        }
+      } catch (e) {
+        print('Error resolving classId: $e');
+      }
+
+      String activeClassName = '';
+      try {
+        final classesList = await api.getClasses();
+        for (var c in classesList) {
+          if (c.classId == resolvedClassId) {
+            activeClassName = c.name;
+            break;
+          }
+        }
+      } catch (e) {
+        print('Error resolving className: $e');
+      }
+
+      final results = await Future.wait<dynamic>([
+        api.getTimetable(resolvedClassId),
+        api.getStudentMarks(resolvedStudentId),
+        api.getAttendanceForStudent(resolvedStudentId),
+        api.getResources(resolvedClassId),
+        api.getNotifications(),
+        api.getContacts(),
+        api.getChatGroups(),
+        api.getLessons(resolvedClassId ?? 0),
+      ]);
+
+      final studentEmail = auth.currentUser?.email;
+      final rawNotifs = results[4] as List<NotificationItem>;
+      final filteredNotifs = rawNotifs.where((n) {
+        final aud = n.audience.toLowerCase();
+        return aud == 'all' || 
+               (aud == 'student' && n.target?.toLowerCase() == studentEmail?.toLowerCase()) ||
+               (aud == 'class' && n.target == resolvedClassId?.toString());
+      }).toList();
+      filteredNotifs.sort((a, b) => b.id.compareTo(a.id));
+
+      if (mounted) {
+        setState(() {
+          _timetable = results[0] as List<TimetableSlot>;
+          _marks = results[1] as List<ScoreDetail>;
+          _attendance = results[2] as List<AttendanceRecord>;
+          _resources = results[3] as List<Resource>;
+          _notifications = filteredNotifs;
+          _helplines = results[5] as List<Helpline>;
+          final allChats = results[6] as List<ChatGroup>;
+          _chatGroups = allChats.where((g) => 
+            g.classId == resolvedClassId?.toString() && 
+            g.type == 'student-teacher'
+          ).toList();
+          _lessons = results[7] as List<LessonSession>;
+          _className = activeClassName;
+          _resolvedClassId = resolvedClassId;
+        });
+      }
+    } catch (e) {
+      print('Error silently fetching student data: $e');
+    }
   }
 
   Future<void> _fetchStudentData() async {
@@ -93,12 +222,22 @@ class _StudentDashboardState extends State<StudentDashboard> {
         api.getLessons(resolvedClassId ?? 0),
       ]);
 
+        final studentEmail = auth.currentUser?.email;
+        final rawNotifs = results[4] as List<NotificationItem>;
+        final filteredNotifs = rawNotifs.where((n) {
+          final aud = n.audience.toLowerCase();
+          return aud == 'all' || 
+                 (aud == 'student' && n.target?.toLowerCase() == studentEmail?.toLowerCase()) ||
+                 (aud == 'class' && n.target == resolvedClassId?.toString());
+        }).toList();
+        filteredNotifs.sort((a, b) => b.id.compareTo(a.id));
+
       setState(() {
         _timetable = results[0] as List<TimetableSlot>;
         _marks = results[1] as List<ScoreDetail>;
         _attendance = results[2] as List<AttendanceRecord>;
         _resources = results[3] as List<Resource>;
-        _notifications = results[4] as List<NotificationItem>;
+        _notifications = filteredNotifs;
         _helplines = results[5] as List<Helpline>;
         final allChats = results[6] as List<ChatGroup>;
         _chatGroups = allChats.where((g) => 
@@ -107,6 +246,7 @@ class _StudentDashboardState extends State<StudentDashboard> {
         ).toList();
         _lessons = results[7] as List<LessonSession>;
         _className = activeClassName;
+        _resolvedClassId = resolvedClassId;
         _isInitialLoading = false;
       });
     } catch (e) {
@@ -120,6 +260,20 @@ class _StudentDashboardState extends State<StudentDashboard> {
     final auth = Provider.of<AuthProvider>(context);
     final lang = Provider.of<LanguageProvider>(context);
     final user = auth.currentUser;
+
+    int unreadCount = 0;
+    if (_lastReadNotificationsTime == null) {
+      unreadCount = _notifications.length;
+    } else {
+      unreadCount = _notifications.where((n) {
+        try {
+          final notifDate = DateTime.parse(n.createdAt);
+          return notifDate.isAfter(_lastReadNotificationsTime!);
+        } catch (_) {
+          return false;
+        }
+      }).length;
+    }
 
     final List<Widget> children = [
       _buildHomeTab(user, lang),
@@ -138,6 +292,92 @@ class _StudentDashboardState extends State<StudentDashboard> {
           IconButton(
             icon: Text(lang.isVietnamese ? '🇻🇳' : '🇬🇧', style: const TextStyle(fontSize: 20)),
             onPressed: () => lang.toggleLanguage(),
+          ),
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.notifications_none),
+                onPressed: () async {
+                  try {
+                    final api = Provider.of<AuthProvider>(context, listen: false).apiService;
+                    final rawNotifs = await api.getNotifications();
+                    final studentEmail = Provider.of<AuthProvider>(context, listen: false).currentUser?.email;
+                    final filteredNotifs = rawNotifs.where((n) {
+                      final aud = n.audience.toLowerCase();
+                      return aud == 'all' || 
+                             (aud == 'student' && n.target?.toLowerCase() == studentEmail?.toLowerCase()) ||
+                             (aud == 'class' && n.target == _resolvedClassId?.toString());
+                    }).toList();
+                    filteredNotifs.sort((a, b) => b.id.compareTo(a.id));
+                    setState(() {
+                      _notifications = filteredNotifs;
+                    });
+                  } catch (e) {
+                    debugPrint('Error refreshing notifications: $e');
+                  }
+
+                  await _updateLastReadNotifsTime();
+
+                  final result = await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => NotificationListScreen(notifications: _notifications),
+                    ),
+                  );
+
+                  if (result != null) {
+                    await _fetchStudentData();
+
+                    int? tabVal;
+                    if (result is int) {
+                      tabVal = result;
+                    } else if (result is Map && result['tabIndex'] is int) {
+                      tabVal = result['tabIndex'] as int;
+                    }
+                    if (tabVal != null && tabVal >= 0) {
+                      if (_marks.isNotEmpty) {
+                        final sorted = List<ScoreDetail>.from(_marks);
+                        sorted.sort((a, b) => b.date.compareTo(a.date));
+                        setState(() {
+                          _selectedSemester = sorted.first.semesterId;
+                          _currentIndex = tabVal!;
+                        });
+                      } else {
+                        setState(() {
+                          _currentIndex = tabVal!;
+                        });
+                      }
+                    }
+                  }
+                },
+              ),
+              if (unreadCount > 0)
+                Positioned(
+                  right: 8,
+                  top: 8,
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    constraints: const BoxConstraints(
+                      minWidth: 14,
+                      minHeight: 14,
+                    ),
+                    child: Text(
+                      '$unreadCount',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 8,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+            ],
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -315,6 +555,9 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   itemCount: _notifications.length > 3 ? 3 : _notifications.length,
                   itemBuilder: (context, idx) {
                     final item = _notifications[idx];
+                    final localized = localizeNotification(item.title, item.body, lang.isVietnamese);
+                    final dispTitle = localized['title'] ?? item.title;
+                    final dispBody = localized['body'] ?? item.body;
                     return Card(
                       margin: const EdgeInsets.symmetric(vertical: 6),
                       child: ListTile(
@@ -322,8 +565,8 @@ class _StudentDashboardState extends State<StudentDashboard> {
                           backgroundColor: Color(0x1F0A2540),
                           child: Icon(Icons.notifications_active, color: Color(0xFF0A2540)),
                         ),
-                        title: Text(item.title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                        subtitle: Text('${item.body}\nSent by: ${item.sender} • ${item.date}', style: const TextStyle(fontSize: 12)),
+                        title: Text(dispTitle, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                        subtitle: Text('$dispBody\nSent by: ${item.sender} • ${item.date}', style: const TextStyle(fontSize: 12)),
                         isThreeLine: true,
                       ),
                     );
@@ -697,6 +940,27 @@ class _StudentDashboardState extends State<StudentDashboard> {
                   itemBuilder: (context, idx) {
                     final subjectName = sortedSubjects[idx];
                     final records = grouped[subjectName] ?? [];
+
+                    // Sort records by session date in descending order (most recent first)
+                    records.sort((a, b) {
+                      LessonSession? lessonA;
+                      for (var l in _lessons) {
+                        if (l.lessonSessionId == a.lessonSessionId) {
+                          lessonA = l;
+                          break;
+                        }
+                      }
+                      LessonSession? lessonB;
+                      for (var l in _lessons) {
+                        if (l.lessonSessionId == b.lessonSessionId) {
+                          lessonB = l;
+                          break;
+                        }
+                      }
+                      final dateA = lessonA?.sessionDate ?? '';
+                      final dateB = lessonB?.sessionDate ?? '';
+                      return dateB.compareTo(dateA);
+                    });
 
                     // Calculate stats
                     int present = 0;

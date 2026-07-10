@@ -197,7 +197,10 @@ export function ClassDetailPage() {
         </Card>
       ) : null}
 
-      <SemesterProgress subjects={classSubjects.map((s) => s.subject)} />
+      <SemesterProgress
+        subjects={classSubjects.map((s) => s.subject)}
+        schoolClass={schoolClass}
+      />
 
       <Card
         title={`Students (${students.length})`}
@@ -479,10 +482,17 @@ const SEMESTER_INITIAL: SemesterFormState = {
   endDate: '',
 }
 
-function SemesterProgress({ subjects }: { subjects: string[] }) {
+function SemesterProgress({
+  subjects,
+  schoolClass,
+}: {
+  subjects: string[]
+  schoolClass: SchoolClass
+}) {
   const {
     semesters,
     exams,
+    timetable,
     addSemester,
     updateSemester,
     deleteSemester,
@@ -702,24 +712,30 @@ function SemesterProgress({ subjects }: { subjects: string[] }) {
         <p className="text-sm text-slate-500">This class has no subjects on the timetable yet.</p>
       ) : (
         <ul className="space-y-2">
-          {subjects.map((subjectName) => (
-            <SubjectExamRow
-              key={subjectName}
-              subject={subjectName}
-              semesterId={activeId}
-              exams={exams.filter(
-                (e) => e.semesterId === activeId && e.subject === subjectName,
-              )}
-              expanded={expanded === subjectName}
-              onToggle={() =>
-                setExpanded((prev) => (prev === subjectName ? null : subjectName))
-              }
-              addExam={addExam}
-              updateExam={updateExam}
-              deleteExam={deleteExam}
-              push={push}
-            />
-          ))}
+          {subjects.map((subjectName) => {
+            const slot = timetable.find((s) => s.classId === schoolClass.id && s.subject === subjectName)
+            const teacherEmail = slot?.teacher || schoolClass.homeroomTeacher || ''
+            return (
+              <SubjectExamRow
+                key={subjectName}
+                subject={subjectName}
+                semesterId={activeId}
+                classId={schoolClass.id}
+                teacherEmail={teacherEmail}
+                exams={exams.filter(
+                  (e) => e.semesterId === activeId && e.subject === subjectName,
+                )}
+                expanded={expanded === subjectName}
+                onToggle={() =>
+                  setExpanded((prev) => (prev === subjectName ? null : subjectName))
+                }
+                addExam={addExam}
+                updateExam={updateExam}
+                deleteExam={deleteExam}
+                push={push}
+              />
+            )
+          })}
         </ul>
       )}
     </Card>
@@ -729,6 +745,8 @@ function SemesterProgress({ subjects }: { subjects: string[] }) {
 function SubjectExamRow({
   subject,
   semesterId,
+  classId,
+  teacherEmail,
   exams,
   expanded,
   onToggle,
@@ -739,10 +757,12 @@ function SubjectExamRow({
 }: {
   subject: string
   semesterId: string
+  classId: string
+  teacherEmail: string
   exams: Exam[]
   expanded: boolean
   onToggle: () => void
-  addExam: (exam: Omit<Exam, 'id'>) => void
+  addExam: (exam: Omit<Exam, 'id'>, teacherEmail: string) => void
   updateExam: (id: number, patch: Partial<Omit<Exam, 'id'>>) => void
   deleteExam: (id: number) => void
   push: (type: 'success' | 'error' | 'info', message: string) => void
@@ -761,12 +781,13 @@ function SubjectExamRow({
       return
     }
     addExam({
+      classId,
       semesterId,
       subject,
       name: examName.trim(),
       date: examDate,
       completed: false,
-    })
+    }, teacherEmail)
     setExamName('')
     setExamDate('')
     push('success', `Exam added to ${subject}.`)

@@ -33,11 +33,19 @@ class User {
       else if (roleId == 4) roleStr = 'parent';
     }
 
+    String emailVal = json['email'] ?? '';
+    if (emailVal.trim().isEmpty && roleStr == 'student') {
+      final usernameVal = json['username'] ?? '';
+      if (usernameVal.isNotEmpty) {
+        emailVal = '${usernameVal.toLowerCase()}@estudiez.edu.vn';
+      }
+    }
+
     return User(
       userId: json['userId'] ?? json['id'],
       username: json['username'] ?? '',
       fullName: json['fullName'] ?? '',
-      email: json['email'] ?? '',
+      email: emailVal,
       phone: json['phone'],
       role: roleStr,
       isActive: json['isActive'] ?? true,
@@ -234,18 +242,22 @@ class NotificationItem {
   final String title;
   final String body;
   final String date;
+  final String createdAt;
   final String audience; // 'class' | 'grade' | 'all'
   final String? target;
   final String sender;
+  final String category; // 'ATTENDANCE' | 'MARK' | 'GENERAL'
 
   NotificationItem({
     required this.id,
     required this.title,
     required this.body,
     required this.date,
+    required this.createdAt,
     required this.audience,
     this.target,
     required this.sender,
+    required this.category,
   });
 
   factory NotificationItem.fromJson(Map<String, dynamic> json, Map<String, String> userNamesMap) {
@@ -256,9 +268,11 @@ class NotificationItem {
       title: json['title'] ?? '',
       body: json['content'] ?? '',
       date: rawDate.toString().length >= 10 ? rawDate.toString().substring(0, 10) : rawDate,
+      createdAt: rawDate.toString(),
       audience: (json['targetType'] ?? 'class').toString().toLowerCase(),
       target: json['targetId']?.toString(),
       sender: userNamesMap[tId] ?? tId,
+      category: (json['category'] ?? 'GENERAL').toString().toUpperCase(),
     );
   }
 }
