@@ -181,6 +181,19 @@ export const batchAssignGradeAndClass = (request: {
 }) =>
   apiPost<string>('/api/admin/grade-management/batch-assign-grade', request)
 
+// ─── School Years ──────────────────────────────────────────────────────────────
+export interface ApiSchoolYear {
+  schoolYearId: number
+  name: string
+  startDate: string
+  endDate: string
+  isCurrent: boolean
+}
+export const getSchoolYears = () =>
+  apiGet<ApiSchoolYear[]>('/api/school-years')
+export const findOrCreateSchoolYear = (name: string) =>
+  apiPost<ApiSchoolYear>('/api/school-years/find-or-create', { name })
+
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 export interface LoginResponse {
   userId?: string
