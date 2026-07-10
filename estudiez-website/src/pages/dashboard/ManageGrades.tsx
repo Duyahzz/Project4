@@ -3,7 +3,8 @@ import { Card } from '../../components/Card'
 import { FormField } from '../../components/FormField'
 import { useData } from '../../hooks/useData'
 import { useToast } from '../../hooks/useToast'
-import { batchPromoteStudents, batchAssignGradeAndClass, updateApiClass } from '../../services/api'
+import { batchPromoteStudents, batchAssignGradeAndClass, updateApiClass, getSchoolYears, findOrCreateSchoolYear } from '../../services/api'
+import type { ApiSchoolYear } from '../../services/api'
 
 export function ManageGrades() {
   const { users, classes, scores, updateUser, updateClass } = useData()
@@ -12,9 +13,15 @@ export function ManageGrades() {
   // Step state: 1 (Setup/Intro), 2 (Phase 1: Graduation), 3 (Phase 2: Promote G11), 4 (Phase 3: Promote G10), 5 (Phase 4: Enroll New Hires), 6 (Summary)
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4 | 5 | 6>(1)
   
-  // Selection school years
+  // DB school years (fetched from API)
+  const [dbSchoolYears, setDbSchoolYears] = useState<ApiSchoolYear[]>([])
+
+  // Selection school years — stored as the display name string
   const [selectedSourceYear, setSelectedSourceYear] = useState<string>('')
+  const [selectedSourceYearId, setSelectedSourceYearId] = useState<number>(0)
+  // Target year selected from a curated list (auto-suggested + existing DB years)
   const [selectedTargetYear, setSelectedTargetYear] = useState<string>('')
+  const [selectedTargetYearId, setSelectedTargetYearId] = useState<number>(0)
   
   // Mappings
   const [mappingsG11, setMappingsG11] = useState<Record<string, string>>({})
@@ -40,7 +47,17 @@ export function ManageGrades() {
   const [excludedNewHireEmails, setExcludedNewHireEmails] = useState<string[]>([])
 
   const students = useMemo(() => users.filter((u) => u.role === 'student'), [users])
-  
+
+  /** Given a year name like "2025-2026", return "2026-2027" */
+  const suggestNextYear = (yearName: string): string => {
+    const parts = yearName.split('-')
+    if (parts.length === 2) {
+      const end = parseInt(parts[1], 10)
+      if (!isNaN(end)) return `${end}-${end + 1}`
+    }
+    return ''
+  }
+
   const getStudentGpa = (email: string) => {
     const studentScores = scores.filter((s) => s.studentEmail === email)
     if (studentScores.length === 0) return 8.0
@@ -77,27 +94,23 @@ export function ManageGrades() {
     return students.filter(s => s.status === 'PENDING_GRADE_ASSIGNMENT' || (!s.classId && !s.grade))
   }, [students])
 
-  // School Year Options
-  const availableSourceYears = useMemo(() => {
-    return Array.from(new Set(classes.map(c => c.year))).sort((a, b) => b.localeCompare(a))
-  }, [classes])
-
-  const availableTargetYears = useMemo(() => {
-    return Array.from(new Set(classes.map(c => c.year))).sort((a, b) => b.localeCompare(a))
-  }, [classes])
-
+  // Fetch real school years from API on mount
   useEffect(() => {
-    if (availableSourceYears.length > 0 && !selectedSourceYear) {
-      setSelectedSourceYear(availableSourceYears[0])
-    }
-  }, [availableSourceYears, selectedSourceYear])
-
-  useEffect(() => {
-    if (availableTargetYears.length > 0 && !selectedTargetYear) {
-      const nextYear = availableTargetYears.find(y => y !== selectedSourceYear) || availableTargetYears[0]
-      setSelectedTargetYear(nextYear)
-    }
-  }, [availableTargetYears, selectedSourceYear, selectedTargetYear])
+    getSchoolYears().then(years => {
+      const sorted = [...years].sort((a, b) => b.name.localeCompare(a.name))
+      setDbSchoolYears(sorted)
+      if (sorted.length > 0 && !selectedSourceYear) {
+        setSelectedSourceYear(sorted[0].name)
+        setSelectedSourceYearId(sorted[0].schoolYearId)
+        // Auto-suggest next target year name
+        if (!selectedTargetYear) {
+          const suggested = suggestNextYear(sorted[0].name)
+          setSelectedTargetYear(suggested)
+        }
+      }
+    }).catch(console.error)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Pre-load class configs
   useEffect(() => {
@@ -238,16 +251,19 @@ export function ManageGrades() {
         return
       }
 
+      // Ensure target year exists in DB and get its ID
+      const targetYearRecord = await findOrCreateSchoolYear(selectedTargetYear)
+      setSelectedTargetYearId(targetYearRecord.schoolYearId)
+
       const studentIds = candidates.map(s => s.userId || '').filter(Boolean)
       const mappings = Array.from(new Set(candidates.map(s => s.classId))).map(cid => ({
         sourceClassId: Number(cid),
         targetClassId: null
       }))
 
-      const schoolYearId = selectedSourceYear === '2024-2025' ? 2 : 1
       await batchPromoteStudents({
-        sourceSchoolYearId: schoolYearId,
-        targetSchoolYearId: schoolYearId === 1 ? 2 : 1,
+        sourceSchoolYearId: selectedSourceYearId,
+        targetSchoolYearId: targetYearRecord.schoolYearId,
         classMappings: mappings,
         studentIds
       })
@@ -296,7 +312,7 @@ export function ManageGrades() {
           await updateApiClass(Number(cid), {
             name: targetClass.name,
             gradeId: 3, // Grade 12
-            schoolYearId: selectedTargetYear === '2024-2025' ? 2 : 1,
+            schoolYearId: selectedTargetYearId,
             homeroomTeacherId: teacherId || undefined,
             room: config.room || undefined,
             studentLimit: config.studentLimit,
@@ -316,12 +332,10 @@ export function ManageGrades() {
       }))
 
       const studentIds = candidates.map(s => s.userId || '').filter(Boolean)
-      const sourceYearId = selectedSourceYear === '2024-2025' ? 2 : 1
-      const targetYearId = selectedTargetYear === '2024-2025' ? 2 : 1
 
       await batchPromoteStudents({
-        sourceSchoolYearId: sourceYearId,
-        targetSchoolYearId: targetYearId,
+        sourceSchoolYearId: selectedSourceYearId,
+        targetSchoolYearId: selectedTargetYearId,
         classMappings,
         studentIds
       })
@@ -371,7 +385,7 @@ export function ManageGrades() {
           await updateApiClass(Number(cid), {
             name: targetClass.name,
             gradeId: 2, // Grade 11
-            schoolYearId: selectedTargetYear === '2024-2025' ? 2 : 1,
+            schoolYearId: selectedTargetYearId,
             homeroomTeacherId: teacherId || undefined,
             room: config.room || undefined,
             studentLimit: config.studentLimit,
@@ -391,12 +405,10 @@ export function ManageGrades() {
       }))
 
       const studentIds = candidates.map(s => s.userId || '').filter(Boolean)
-      const sourceYearId = selectedSourceYear === '2024-2025' ? 2 : 1
-      const targetYearId = selectedTargetYear === '2024-2025' ? 2 : 1
 
       await batchPromoteStudents({
-        sourceSchoolYearId: sourceYearId,
-        targetSchoolYearId: targetYearId,
+        sourceSchoolYearId: selectedSourceYearId,
+        targetSchoolYearId: selectedTargetYearId,
         classMappings,
         studentIds
       })
@@ -453,7 +465,7 @@ export function ManageGrades() {
           await updateApiClass(Number(cid), {
             name: targetClass.name,
             gradeId: 1, // Grade 10
-            schoolYearId: selectedTargetYear === '2024-2025' ? 2 : 1,
+            schoolYearId: selectedTargetYearId,
             homeroomTeacherId: teacherId || undefined,
             room: config.room || undefined,
             studentLimit: config.studentLimit,
@@ -478,15 +490,13 @@ export function ManageGrades() {
         }
       })
 
-      const targetYearId = selectedTargetYear === '2024-2025' ? 2 : 1
-
       for (const [targetClassId, studentIds] of studentsByTargetClass.entries()) {
         const targetClass = classes.find(c => c.id === targetClassId)
         await batchAssignGradeAndClass({
           studentIds,
           gradeLevel: 10,
           targetClassId: Number(targetClassId),
-          schoolYearId: targetYearId
+          schoolYearId: selectedTargetYearId
         })
 
         candidates.forEach(s => {
@@ -566,29 +576,58 @@ export function ManageGrades() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <FormField
-                as="select"
-                label="Source School Year (Old)"
-                name="sourceYear"
-                value={selectedSourceYear}
-                onChange={(e) => setSelectedSourceYear(e.target.value)}
-              >
-                {availableSourceYears.map(y => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </FormField>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Source School Year (Old)</label>
+                <select
+                  className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  value={selectedSourceYear}
+                  onChange={(e) => {
+                    const chosen = dbSchoolYears.find(y => y.name === e.target.value)
+                    setSelectedSourceYear(e.target.value)
+                    setSelectedSourceYearId(chosen?.schoolYearId ?? 0)
+                    // Auto-suggest next target year
+                    setSelectedTargetYear(suggestNextYear(e.target.value))
+                    setSelectedTargetYearId(0)
+                  }}
+                >
+                  {dbSchoolYears.map(y => (
+                    <option key={y.schoolYearId} value={y.name}>{y.name}{y.isCurrent ? ' (Current)' : ''}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-slate-400 mt-1">School years with existing classes</p>
+              </div>
 
-              <FormField
-                as="select"
-                label="Target School Year (New)"
-                name="targetYear"
-                value={selectedTargetYear}
-                onChange={(e) => setSelectedTargetYear(e.target.value)}
-              >
-                {availableTargetYears.map(y => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </FormField>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Target School Year (New)</label>
+                <select
+                  className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  value={selectedTargetYear}
+                  onChange={(e) => {
+                    const existing = dbSchoolYears.find(y => y.name === e.target.value)
+                    setSelectedTargetYear(e.target.value)
+                    // If the selected year already exists in DB, capture its ID now;
+                    // otherwise leave 0 — find-or-create will assign the ID on execution.
+                    setSelectedTargetYearId(existing?.schoolYearId ?? 0)
+                  }}
+                >
+                  {/* Auto-suggested next year always appears first */}
+                  {(() => {
+                    const suggested = suggestNextYear(selectedSourceYear)
+                    const existingNames = new Set(dbSchoolYears.map(y => y.name))
+                    const options: string[] = []
+                    if (suggested) options.push(suggested)
+                    dbSchoolYears
+                      .filter(y => y.name !== selectedSourceYear && y.name !== suggested)
+                      .forEach(y => options.push(y.name))
+                    return options.map(name => (
+                      <option key={name} value={name}>
+                        {name}{!existingNames.has(name) ? ' (new — will be created)' : ''}
+                      </option>
+                    ))
+                  })()}
+                </select>
+                <p className="text-xs text-slate-400 mt-1">Select the year students will be promoted into</p>
+              </div>
             </div>
 
             <div className="flex justify-end pt-4 border-t border-slate-100">
