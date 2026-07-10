@@ -47,7 +47,23 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     credentials: 'include',
     ...init,
   })
-  if (!res.ok) throw new Error(`[API] ${init?.method ?? 'GET'} ${path} → ${res.status}`)
+  if (!res.ok) {
+    let errorMsg = `[API] ${init?.method ?? 'GET'} ${path} → ${res.status}`
+    try {
+      const bodyText = await res.text()
+      if (bodyText) {
+        const parsed = JSON.parse(bodyText)
+        if (parsed && parsed.message) {
+          errorMsg = parsed.message
+        } else if (typeof parsed === 'string') {
+          errorMsg = parsed
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+    throw new Error(errorMsg)
+  }
   const text = await res.text()
   return text ? (JSON.parse(text) as T) : (undefined as unknown as T)
 }
@@ -127,8 +143,8 @@ export const getClassEnrollments = () => apiGet<ApiClassEnrollment[]>('/api/enro
 
 // ─── Classes ─────────────────────────────────────────────────────────────────
 export const getClasses     = () => apiGet<ApiClass[]>('/api/classes')
-export const createApiClass = (c: ApiClass) => apiPost<ApiClass>('/api/classes', c)
-export const updateApiClass = (id: number, c: ApiClass) => apiPut<ApiClass>(`/api/classes/${id}`, c)
+export const createApiClass = (c: any) => apiPost<ApiClass>('/api/classes', c)
+export const updateApiClass = (id: number, c: any) => apiPut<ApiClass>(`/api/classes/${id}`, c)
 export const deleteApiClass = (id: number) => apiDel(`/api/classes/${id}`)
 
 // ─── Assessments & marks ─────────────────────────────────────────────────────
@@ -150,6 +166,20 @@ export const assignGradeToStudent = (studentId: string, gradeId: number) =>
   apiPut<{ message: string }>(`/api/admin/grade-management/assign-grade/${studentId}`, { gradeId })
 export const markStudentAsGraduated = (studentId: string) =>
   apiPut<{ message: string }>(`/api/admin/grade-management/mark-as-graduated/${studentId}`, {})
+export const batchPromoteStudents = (request: {
+  sourceSchoolYearId: number
+  targetSchoolYearId: number
+  classMappings: { sourceClassId: number; targetClassId: number | null }[]
+  studentIds: string[]
+}) =>
+  apiPost<string>('/api/admin/grade-management/batch-promote', request)
+export const batchAssignGradeAndClass = (request: {
+  studentIds: string[]
+  gradeLevel: number
+  targetClassId: number | null
+  schoolYearId: number
+}) =>
+  apiPost<string>('/api/admin/grade-management/batch-assign-grade', request)
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 export interface LoginResponse {
@@ -203,6 +233,7 @@ export function mapApiUsersToFrontend(
       password: '',  // authentication is server-side; no plain-text password stored
       role,
       userId: u.userId ?? undefined,
+      status: student?.status || undefined,
     }
 
     if (role === 'teacher') {
@@ -224,6 +255,8 @@ export function mapApiClass(c: ApiClass, nameByTeacherId?: Map<string, string>):
     homeroomTeacher: c.homeroomTeacherId && nameByTeacherId
       ? (nameByTeacherId.get(c.homeroomTeacherId.toLowerCase()) ?? undefined)
       : undefined,
+    studentLimit: (c as any).studentLimit ?? 40,
+    room: c.room ?? '',
   }
 }
 

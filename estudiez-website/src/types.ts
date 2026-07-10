@@ -25,6 +25,8 @@ export interface User {
   subject?: string
   /** Parent: linked child's email. */
   childEmail?: string
+  /** Student status: ACTIVE, GRADUATED, PENDING_GRADE_ASSIGNMENT. */
+  status?: string
 }
 
 export interface SchoolClass {
@@ -33,6 +35,8 @@ export interface SchoolClass {
   grade: Grade
   year: string
   homeroomTeacher?: string
+  studentLimit?: number
+  room?: string
 }
 
 export interface Subject {

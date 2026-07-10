@@ -11,4 +11,5 @@ public interface ClassEnrollmentRepository extends JpaRepository<ClassEnrollment
     List<ClassEnrollment> findByClassId(Integer classId);
     List<ClassEnrollment> findByStudentId(UUID studentId);
     List<ClassEnrollment> findByStudentIdAndStatus(UUID studentId, String status);
+    long countByClassIdAndStatus(Integer classId, String status);
 }

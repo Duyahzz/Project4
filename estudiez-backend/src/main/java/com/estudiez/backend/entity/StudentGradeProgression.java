@@ -18,7 +18,7 @@ public class StudentGradeProgression {
     @Column(nullable = false)
     private Integer schoolYearId;
 
-    @Column(nullable = false)
+    @Column(nullable = true)
     private Integer previousGrade;
 
     @Column(nullable = false)

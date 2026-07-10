@@ -59,7 +59,6 @@ import {
   mapApiTimetableSlot,
   mapApiUsersToFrontend,
   SUBJECT_ID_MAP,
-  submitRegistrationApi,
   saveMarkApi,
   sendChatMessage,
   type ApiAssessment,
@@ -453,7 +452,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
                 teacher: nameByTeacherId.get(lesson.teacherId ?? '') ?? lesson.teacherId ?? '',
                 note: a.note ?? '',
               }]
-              } as AttendanceRecord
             })
 
           if (!cancelled && mappedAttendance.length > 0) setAttendance(mappedAttendance)
@@ -499,7 +497,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           }
         })
 
-        const allMessages = chatGroups.flatMap((g, i) =>
+        const allMessages = chatGroups.flatMap((_, i) =>
           msgBatches[i].map(m => mapApiChatMessage(m, nameByUserId, emailByUserId)),
         )
 
@@ -774,8 +772,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setEvaluations((prev) => {
         let next = [...prev]
         results.forEach((res) => {
-          if (!res || !res.rec.evaluation) return
+          if (!res) return
           const { rec, saved } = res
+          if (!rec.evaluation) return
           // Remove if already exists in state
           next = next.filter(
             (e) => !(e.studentEmail === rec.studentEmail && e.testId === String(examId))
