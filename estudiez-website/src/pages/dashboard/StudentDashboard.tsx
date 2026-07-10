@@ -808,11 +808,6 @@ export function AttendanceTab({
     return weekOptions.length > 0 && attDateStr(weekStart) === weekOptions[weekOptions.length - 1].value
   }, [weekOptions, weekStart])
 
-  const weekLabel =
-    weekStart.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) +
-    ' – ' +
-    weekDays[5].label
-
   return (
     <div className="space-y-4">
       {/* Semester Selector */}

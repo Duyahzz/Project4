@@ -1,4 +1,4 @@
-﻿-- =============================================================
+-- =============================================================
 --  eStudiez â€” Complete Database Setup + Student Grade Management
 --  Single unified script combining schema, migration, and test data
 --
@@ -148,6 +148,7 @@ CREATE TABLE Classes (
     TrainingProgram   NVARCHAR(30)     NOT NULL DEFAULT 'REGULAR',
     Room              NVARCHAR(50)     NULL,
     IsActive          BIT              NOT NULL DEFAULT 1,
+    StudentLimit      INT              NOT NULL DEFAULT 40,
     CONSTRAINT UQ_Classes          UNIQUE (SchoolYearId, Name, TrainingProgram),
     CONSTRAINT CK_Classes_Training CHECK  (TrainingProgram IN ('REGULAR','REVISION'))
 );
@@ -781,8 +782,8 @@ INSERT INTO Semesters (SchoolYearId,Name,StartDate,EndDate)
 DECLARE @sem2 INT = SCOPE_IDENTITY();
 
 -- Classes
-INSERT INTO Classes (SchoolYearId,GradeId,Name,HomeroomTeacherId,TrainingProgram,Room,IsActive)
-    VALUES (@syId,@g10,N'10A1',@tId01,N'REGULAR',N'101',1);
+INSERT INTO Classes (SchoolYearId,GradeId,Name,HomeroomTeacherId,TrainingProgram,Room,IsActive,StudentLimit)
+    VALUES (@syId,@g10,N'10A1',@tId01,N'REGULAR',N'101',1,5);
 DECLARE @c10A1 INT = SCOPE_IDENTITY();
 
 INSERT INTO Classes (SchoolYearId,GradeId,Name,HomeroomTeacherId,TrainingProgram,Room,IsActive)

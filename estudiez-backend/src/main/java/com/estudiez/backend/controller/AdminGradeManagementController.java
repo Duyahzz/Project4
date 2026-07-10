@@ -1,5 +1,7 @@
 package com.estudiez.backend.controller;
 
+import com.estudiez.backend.dto.BatchAssignGradeRequest;
+import com.estudiez.backend.dto.BatchPromotionRequest;
 import com.estudiez.backend.entity.Student;
 import com.estudiez.backend.service.AdminGradeManagementService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -24,6 +26,20 @@ public class AdminGradeManagementController {
             @RequestParam Integer schoolYearId) {
         adminGradeService.promoteAllStudentsForNewYear(schoolYearId);
         return ResponseEntity.ok("All students promoted successfully for school year: " + schoolYearId);
+    }
+
+    @PostMapping("/batch-promote")
+    @Operation(summary = "Batch promote students with class mappings")
+    public ResponseEntity<String> batchPromoteAndGraduate(@RequestBody BatchPromotionRequest request) {
+        adminGradeService.batchPromoteAndGraduate(request);
+        return ResponseEntity.ok("Batch promotion completed successfully.");
+    }
+
+    @PostMapping("/batch-assign-grade")
+    @Operation(summary = "Batch assign grade and class to new students")
+    public ResponseEntity<String> batchAssignGradeAndClass(@RequestBody BatchAssignGradeRequest request) {
+        adminGradeService.batchAssignGradeAndClass(request);
+        return ResponseEntity.ok("Batch grade assignment completed successfully.");
     }
 
     @PostMapping("/create-new-student-without-grade")
