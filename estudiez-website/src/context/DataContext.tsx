@@ -11,7 +11,6 @@ import type {
   NewsItem,
   NotificationItem,
   ProgressDetail,
-  RegistrationRequest,
   Resource,
   RevisionClass,
   SchoolClass,
@@ -26,7 +25,6 @@ import {
   createLessonSession,
   recordAttendance,
   getLessonsByClass,
-  approveRegistrationApi,
   deleteApiClass,
   deleteApiUser,
   deleteApiNotification as deleteApiNotificationApi,
@@ -44,7 +42,6 @@ import {
   getNotifications,
   getParentLinks,
   getParents,
-  getRegistrations,
   getResources,
   getStudents,
   getTeachers,
@@ -59,11 +56,9 @@ import {
   mapApiMarkToScore,
   mapApiNewsPost,
   mapApiNotification,
-  mapApiRegistration,
   mapApiStudyResource,
   mapApiTimetableSlot,
   mapApiUsersToFrontend,
-  rejectRegistrationApi,
   SUBJECT_ID_MAP,
   SEMESTER_ID_MAP,
   submitRegistrationApi,
@@ -98,7 +93,6 @@ interface DataContextValue {
   chatGroups: ChatGroup[]
   chatMessages: ChatMessage[]
   helplines: Helpline[]
-  registrations: RegistrationRequest[]
   addUser: (user: User) => void
   updateUser: (email: string, patch: Partial<Omit<User, 'email' | 'role'>>) => User | null
   deleteUser: (email: string) => void
@@ -156,9 +150,6 @@ interface DataContextValue {
   updateChatGroup: (id: string, patch: Partial<Omit<ChatGroup, 'id'>>) => void
   deleteChatGroup: (id: string) => void
   addChatMessage: (message: Omit<ChatMessage, 'id'>) => void
-  addRegistrationRequest: (request: Omit<RegistrationRequest, 'id' | 'status' | 'submittedAt'>) => void
-  approveRegistration: (id: number) => void
-  rejectRegistration: (id: number) => void
 }
 
 export const DataContext = createContext<DataContextValue | undefined>(undefined)
@@ -184,7 +175,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [chatGroups, setChatGroups] = useState<ChatGroup[]>([])
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
   const [helplines, setHelplines] = useState<Helpline[]>([])
-  const [registrations, setRegistrations] = useState<RegistrationRequest[]>([])
 
   // Backend ID lookup maps — keyed by the frontend primary key so mutations can
   // call the correct REST endpoint without changing the frontend type shapes.
@@ -203,7 +193,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setSemesters(SEED_SEMESTERS)
 
       try {
-        const [apiUsers, apiStudents, apiTeachers, apiClasses, apiAssessments, apiRegs,
+        const [apiUsers, apiStudents, apiTeachers, apiClasses, apiAssessments,
                apiTimetable, apiResources, apiNewsPosts, apiNotifs, apiChatGroups, apiContacts,
                apiParentLinks, apiParents, apiEnrollments, apiLessons] =
           await Promise.all([
@@ -212,7 +202,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
             getTeachers(),
             getClasses(),
             getAssessments(),
-            getRegistrations(),
             getTimetable().catch(() => []),
             getResources().catch(() => []),
             getAllNews().catch(() => []),
@@ -334,7 +323,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
         setUsers(mappedUsers)
         setClasses(apiClasses.map(c => mapApiClass(c, nameByTeacherId)))
         setExams(apiAssessments.map(mapApiAssessmentToExam))
-        setRegistrations(apiRegs.map(mapApiRegistration))
 
         if (apiTimetable.length > 0)
           setTimetable(apiTimetable.map(s => mapApiTimetableSlot(s, nameByTeacherId)))
@@ -448,16 +436,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
           const allAttendance = await getAllAttendance().catch(() => [] as ApiAttendanceRecord[])
 
           // Map to frontend AttendanceRecord
-          const mappedAttendance = allAttendance
-            .map(a => {
+          const mappedAttendance: AttendanceRecord[] = allAttendance.flatMap(a => {
               const lesson = lessonById.get(a.lessonSessionId ?? 0)
-              if (!lesson || !a.studentId) return null
+              if (!lesson || !a.studentId) return []
               const studentEmail = emailByStudentId.current.get(a.studentId) ?? ''
-              if (!studentEmail) return null
+              if (!studentEmail) return []
               // Normalize date to YYYY-MM-DD format (strip time portion if present)
               const rawDate = lesson.sessionDate ?? ''
               const normalizedDate = rawDate.includes('T') ? rawDate.split('T')[0] : rawDate.slice(0, 10)
-              return {
+              return [{
                 id: a.attendanceRecordId ?? 0,
                 studentEmail,
                 classId: String(lesson.classId ?? ''),
@@ -467,9 +454,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
                 status: (a.status ?? 'present').toLowerCase() as AttendanceStatus,
                 teacher: nameByTeacherId.get(lesson.teacherId ?? '') ?? lesson.teacherId ?? '',
                 note: a.note ?? '',
-              } as AttendanceRecord
+              }]
             })
-            .filter((a): a is AttendanceRecord => a !== null)
 
           if (!cancelled && mappedAttendance.length > 0) setAttendance(mappedAttendance)
         }
@@ -514,7 +500,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           }
         })
 
-        const allMessages = chatGroups.flatMap((g, i) =>
+        const allMessages = chatGroups.flatMap((_, i) =>
           msgBatches[i].map(m => mapApiChatMessage(m, nameByUserId, emailByUserId)),
         )
 
@@ -810,8 +796,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setEvaluations((prev) => {
         let next = [...prev]
         results.forEach((res) => {
-          if (!res || !res.rec.evaluation) return
+          if (!res) return
           const { rec, saved } = res
+          if (!rec.evaluation) return
           // Remove if already exists in state
           next = next.filter(
             (e) => !(e.studentEmail === rec.studentEmail && e.testId === String(examId))
@@ -906,59 +893,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
     },
     [users],
   )
-  const addRegistrationRequest = useCallback(
-    (request: Omit<RegistrationRequest, 'id' | 'status' | 'submittedAt'>) => {
-      setRegistrations((prev) => [
-        {
-          ...request,
-          id: nextId(prev),
-          status: 'pending',
-          submittedAt: new Date().toISOString().slice(0, 16),
-        },
-        ...prev,
-      ])
-      // Sync to backend (fire-and-forget)
-      submitRegistrationApi({
-        fullName: request.fullName,
-        email: request.email,
-        phone: request.phone ?? undefined,
-        roleRequested: request.role,
-        status: 'PENDING',
-      }).catch(console.warn)
-    },
-    [],
-  )
-  const approveRegistration = useCallback((id: number) => {
-    setRegistrations((prevRequests) => {
-      const request = prevRequests.find((r) => r.id === id)
-      if (request && request.status === 'pending') {
-        const newUser: User = {
-          email: request.email,
-          fullName: request.fullName,
-          address: request.address,
-          phone: request.phone,
-          password: request.password,
-          role: request.role,
-          age: request.age,
-          childEmail: request.childEmail,
-        }
-        setUsers((prevUsers) =>
-          prevUsers.some((u) => u.email === newUser.email)
-            ? prevUsers
-            : [...prevUsers, newUser],
-        )
-      }
-      return prevRequests.map((r) => (r.id === id ? { ...r, status: 'approved' } : r))
-    })
-    // Sync to backend (fire-and-forget; id equals requestId when data came from backend)
-    approveRegistrationApi(id).catch(console.warn)
-  }, [])
-  const rejectRegistration = useCallback((id: number) => {
-    setRegistrations((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, status: 'rejected' } : r)),
-    )
-    rejectRegistrationApi(id).catch(console.warn)
-  }, [])
 
   const value = useMemo<DataContextValue>(
     () => ({
@@ -1011,10 +945,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
       updateChatGroup,
       deleteChatGroup,
       addChatMessage,
-      registrations,
-      addRegistrationRequest,
-      approveRegistration,
-      rejectRegistration,
     }),
     [
       loading,
@@ -1066,10 +996,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
       updateChatGroup,
       deleteChatGroup,
       addChatMessage,
-      registrations,
-      addRegistrationRequest,
-      approveRegistration,
-      rejectRegistration,
     ],
   )
 

@@ -33,6 +33,9 @@ public class SchoolClassService {
         sc.setHomeroomTeacherId(updated.getHomeroomTeacherId());
         sc.setIsActive(updated.getIsActive());
         sc.setTrainingProgram(updated.getTrainingProgram());
+        if (updated.getStudentLimit() != null) {
+            sc.setStudentLimit(updated.getStudentLimit());
+        }
         return classRepo.save(sc);
     }
 

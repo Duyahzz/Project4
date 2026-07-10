@@ -25,6 +25,8 @@ export interface User {
   subject?: string
   /** Parent: linked child's email. */
   childEmail?: string
+  /** Student status: ACTIVE, GRADUATED, PENDING_GRADE_ASSIGNMENT. */
+  status?: string
 }
 
 export interface SchoolClass {
@@ -33,6 +35,8 @@ export interface SchoolClass {
   grade: Grade
   year: string
   homeroomTeacher?: string
+  studentLimit?: number
+  room?: string
 }
 
 export interface Subject {
@@ -104,6 +108,8 @@ export interface TimetableSlot {
   classId: string
   day: DayOfWeek
   period: number
+  startTime: string
+  endTime: string
   subject: string
   teacher: string
   room: string
@@ -201,20 +207,4 @@ export interface ChatMessage {
 export interface Helpline {
   label: string
   phone: string
-}
-
-export type RegistrationStatus = 'pending' | 'approved' | 'rejected'
-
-export interface RegistrationRequest {
-  id: number
-  email: string
-  fullName: string
-  address: string
-  phone?: string
-  password: string
-  role: Role
-  age?: number
-  childEmail?: string
-  status: RegistrationStatus
-  submittedAt: string
 }

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Card } from '../../components/Card'
 import { FormField } from '../../components/FormField'
@@ -7,149 +7,151 @@ import { Tabs } from '../../components/Tabs'
 import { useAuth } from '../../hooks/useAuth'
 import { useData } from '../../hooks/useData'
 import { useToast } from '../../hooks/useToast'
+
 import { userDetailPath } from '../userDetailPath'
 import { chatGroupDetailPath } from '../chatGroupDetailPath'
 import { classDetailPath } from '../classDetailPath'
 import { notificationDetailPath } from '../notificationDetailPath'
 import type { ChatGroupType, Grade } from '../../types'
+import { ManageGrades } from './ManageGrades'
 
 export function AdminDashboard() {
-  const { users, classes, registrations } = useData()
+  const { users, classes } = useData()
+  const navigate = useNavigate()
+  const [activeView, setActiveView] = useState<'overview' | 'administration'>('overview')
+
+  const students = useMemo(() => users.filter((u) => u.role === 'student'), [users])
+
+  const classGradeMap = useMemo(() => {
+    return new Map(classes.map((schoolClass) => [schoolClass.id, schoolClass.grade]))
+  }, [classes])
 
   const counts = useMemo(() => {
+    const byGrade = { 10: 0, 11: 0, 12: 0 } as Record<Grade, number>
+    for (const student of students) {
+      const grade = student.classId ? classGradeMap.get(student.classId) ?? student.grade : student.grade
+      if (grade) byGrade[grade] += 1
+    }
+
+    const byClass = classes
+      .map((schoolClass) => ({
+        id: schoolClass.id,
+        name: schoolClass.name,
+        grade: schoolClass.grade,
+        count: students.filter((student) => student.classId === schoolClass.id).length,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+
     return {
-      students: users.filter((u) => u.role === 'student').length,
+      students: students.length,
       teachers: users.filter((u) => u.role === 'teacher').length,
       parents: users.filter((u) => u.role === 'parent').length,
       classes: classes.length,
+      byGrade,
+      byClass,
     }
-  }, [users, classes])
-
-  const pendingCount = registrations.filter((r) => r.status === 'pending').length
+  }, [users, classes, students, classGradeMap])
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <StatCard label="Students" value={counts.students} />
-        <StatCard label="Teachers" value={counts.teachers} />
-        <StatCard label="Parents" value={counts.parents} />
-        <StatCard label="Classes" value={counts.classes} />
-      </div>
-
-      <Card title="School Administration">
-        <Tabs
-          tabs={[
-            {
-              id: 'requests',
-              label: pendingCount > 0 ? `Requests (${pendingCount})` : 'Requests',
-              content: <ManageRequests />,
-            },
-            { id: 'students', label: 'Students', content: <ManageStudents /> },
-            { id: 'teachers', label: 'Teachers', content: <ManageTeachers /> },
-            { id: 'parents', label: 'Parents', content: <ManageParents /> },
-            { id: 'classes', label: 'Classes', content: <ManageClasses /> },
-            { id: 'news', label: 'News', content: <ManageNews /> },
-            { id: 'notify', label: 'Notify Teachers', content: <NotifyTeachers /> },
-            { id: 'chat', label: 'Chat Groups', content: <ManageChatGroups /> },
-          ]}
-        />
-      </Card>
-    </div>
-  )
-}
-
-function ManageRequests() {
-  const { registrations, approveRegistration, rejectRegistration } = useData()
-  const { push } = useToast()
-
-  const pending = registrations.filter((r) => r.status === 'pending')
-  const handled = registrations.filter((r) => r.status !== 'pending')
-
-  const handleApprove = (id: number, email: string) => {
-    approveRegistration(id)
-    push('success', `Account approved. Login info sent to ${email}.`)
-  }
-
-  const handleReject = (id: number, email: string) => {
-    if (!window.confirm(`Reject registration request from ${email}?`)) return
-    rejectRegistration(id)
-    push('info', `Registration request from ${email} was rejected.`)
-  }
-
-  return (
-    <div className="space-y-4">
-      <Card
-        title="Pending Registration Requests"
-        description="New sign-ups must be approved before they can log in."
-      >
-        {pending.length === 0 ? (
-          <p className="text-sm text-slate-500">No pending requests.</p>
-        ) : (
-          <ul className="space-y-3">
-            {pending.map((request) => (
-              <li
-                key={request.id}
-                className="border border-slate-200 rounded-lg p-4 flex flex-wrap items-start justify-between gap-3"
-              >
-                <div>
-                  <p className="font-semibold text-slate-900">
-                    {request.fullName}{' '}
-                    <span className="ml-1 inline-flex items-center rounded-full bg-indigo-100 text-indigo-700 px-2 py-0.5 text-xs font-semibold uppercase">
-                      {request.role}
-                    </span>
-                  </p>
-                  <p className="text-sm text-slate-600">{request.email}</p>
-                  <p className="text-xs text-slate-500 mt-1">
-                    {request.address}
-                    {request.age ? ` · Age ${request.age}` : ''}
-                    {request.childEmail ? ` · Child: ${request.childEmail}` : ''}
-                  </p>
-                  <p className="text-xs text-slate-400 mt-1">Submitted {request.submittedAt}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleApprove(request.id, request.email)}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-md px-3 py-1.5"
-                  >
-                    Approve
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleReject(request.id, request.email)}
-                    className="border border-slate-300 text-slate-700 hover:bg-slate-100 text-sm font-semibold rounded-md px-3 py-1.5"
-                  >
-                    Reject
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
+      <Card>
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">Admin Workspace</h2>
+            <p className="text-sm text-slate-500">Switch between dashboard analytics and administration tools.</p>
+          </div>
+          <div className="inline-flex rounded-lg border border-slate-200 p-1 bg-slate-50">
+            <button
+              type="button"
+              onClick={() => setActiveView('overview')}
+              className={`px-3 py-1.5 text-sm font-medium rounded-md ${
+                activeView === 'overview' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600 hover:text-slate-800'
+              }`}
+            >
+              Dashboard Overview
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveView('administration')}
+              className={`px-3 py-1.5 text-sm font-medium rounded-md ${
+                activeView === 'administration'
+                  ? 'bg-white text-indigo-700 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-800'
+              }`}
+            >
+              School Administration
+            </button>
+          </div>
+        </div>
       </Card>
 
-      {handled.length > 0 ? (
-        <Card title="Reviewed Requests">
-          <ul className="divide-y divide-slate-100">
-            {handled.map((request) => (
-              <li key={request.id} className="py-2 flex items-center justify-between gap-3">
-                <span className="text-sm text-slate-700">
-                  {request.fullName} · {request.email}
-                </span>
-                <span
-                  className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold uppercase ${
-                    request.status === 'approved'
-                      ? 'bg-emerald-100 text-emerald-700'
-                      : 'bg-rose-100 text-rose-700'
-                  }`}
-                >
-                  {request.status}
-                </span>
-              </li>
-            ))}
-          </ul>
+      {activeView === 'overview' ? (
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <StatCard label="Students" value={counts.students} />
+            <StatCard label="Teachers" value={counts.teachers} />
+            <StatCard label="Parents" value={counts.parents} />
+            <StatCard label="Classes" value={counts.classes} />
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <Card title="Students by Grade">
+              <ul className="space-y-2">
+                {[10, 11, 12].map((grade) => (
+                  <li
+                    key={grade}
+                    className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2"
+                  >
+                    <span className="text-slate-700">Grade {grade}</span>
+                    <span className="font-semibold text-indigo-700">{counts.byGrade[grade as Grade]}</span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+
+            <Card title="Students by Class">
+              {counts.byClass.length === 0 ? (
+                <p className="text-sm text-slate-500">No classes found.</p>
+              ) : (
+                <ul className="space-y-2 max-h-80 overflow-auto pr-1">
+                  {counts.byClass.map((item) => (
+                    <li
+                      key={item.id}
+                      className="rounded-lg border border-slate-200"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => navigate(classDetailPath(item.id))}
+                        className="w-full px-3 py-2 flex items-center justify-between text-left hover:bg-slate-50 rounded-lg"
+                      >
+                        <span className="text-slate-700">
+                          {item.name} <span className="text-slate-400">(Grade {item.grade})</span>
+                        </span>
+                        <span className="font-semibold text-indigo-700">{item.count}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+          </div>
+        </>
+      ) : (
+        <Card title="School Administration">
+          <Tabs
+            tabs={[
+              { id: 'students', label: 'Students', content: <ManageStudents /> },
+              { id: 'grades', label: 'Grade Management', content: <ManageGrades /> },
+              { id: 'teachers', label: 'Teachers', content: <ManageTeachers /> },
+              { id: 'parents', label: 'Parents', content: <ManageParents /> },
+              { id: 'classes', label: 'Classes', content: <ManageClasses /> },
+              { id: 'news', label: 'News', content: <ManageNews /> },
+              { id: 'notify', label: 'Notify Teachers', content: <NotifyTeachers /> },
+              { id: 'chat', label: 'Chat Groups', content: <ManageChatGroups /> },
+            ]}
+          />
         </Card>
-      ) : null}
+      )}
     </div>
   )
 }
@@ -187,7 +189,76 @@ function ManageStudents() {
   const { users, classes, addUser, updateUser } = useData()
   const { push } = useToast()
   const navigate = useNavigate()
-  const students = users.filter((u) => u.role === 'student')
+  const students = useMemo(() => users.filter((u) => u.role === 'student'), [users])
+
+  const classLabelMap = useMemo(() => {
+    return new Map(classes.map((schoolClass) => [schoolClass.id, `${schoolClass.name} (Grade ${schoolClass.grade})`]))
+  }, [classes])
+
+  const [searchTerm, setSearchTerm] = useState('')
+  const [selectedClassFilter, setSelectedClassFilter] = useState<string>('all')
+  const [sortBy, setSortBy] = useState<'name' | 'class' | 'email'>('name')
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
+  const [page, setPage] = useState(1)
+  const pageSize = 10
+
+  const filteredAndSortedStudents = useMemo(() => {
+    const normalizedSearch = searchTerm.trim().toLowerCase()
+
+    const classFiltered =
+      selectedClassFilter === 'all'
+        ? students
+        : students.filter((student) => (student.classId ?? 'unassigned') === selectedClassFilter)
+
+    const filtered = normalizedSearch
+      ? classFiltered.filter((student) => {
+          const classLabel = student.classId ? classLabelMap.get(student.classId) ?? student.classId : 'Unassigned'
+          return (
+            student.fullName.toLowerCase().includes(normalizedSearch) ||
+            student.email.toLowerCase().includes(normalizedSearch) ||
+            classLabel.toLowerCase().includes(normalizedSearch)
+          )
+        })
+      : classFiltered
+
+    const sorted = [...filtered].sort((a, b) => {
+      const aClass = a.classId ? classLabelMap.get(a.classId) ?? a.classId : 'Unassigned'
+      const bClass = b.classId ? classLabelMap.get(b.classId) ?? b.classId : 'Unassigned'
+
+      let left = ''
+      let right = ''
+      if (sortBy === 'name') {
+        left = a.fullName
+        right = b.fullName
+      } else if (sortBy === 'email') {
+        left = a.email
+        right = b.email
+      } else {
+        left = aClass
+        right = bClass
+      }
+
+      const result = left.localeCompare(right)
+      return sortDirection === 'asc' ? result : -result
+    })
+
+    return sorted
+  }, [students, selectedClassFilter, searchTerm, sortBy, sortDirection, classLabelMap])
+
+  const totalPages = Math.max(1, Math.ceil(filteredAndSortedStudents.length / pageSize))
+
+  useEffect(() => {
+    setPage(1)
+  }, [searchTerm, selectedClassFilter, sortBy, sortDirection])
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages)
+  }, [page, totalPages])
+
+  const pagedStudents = useMemo(() => {
+    const start = (page - 1) * pageSize
+    return filteredAndSortedStudents.slice(start, start + pageSize)
+  }, [filteredAndSortedStudents, page])
 
   const [modalOpen, setModalOpen] = useState(false)
   const [form, setForm] = useState<StudentFormState>({
@@ -362,6 +433,55 @@ function ManageStudents() {
       </Modal>
 
       <Card>
+        <div className="mb-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <FormField
+            label="Search"
+            name="searchStudents"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Search by name, email, or class"
+          />
+          <FormField
+            as="select"
+            label="Class filter"
+            name="classFilter"
+            value={selectedClassFilter}
+            onChange={(e) => setSelectedClassFilter(e.target.value)}
+          >
+            <option value="all">All classes</option>
+            <option value="unassigned">Unassigned</option>
+            {classes
+              .slice()
+              .sort((a, b) => a.name.localeCompare(b.name))
+              .map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} (Grade {c.grade})
+                </option>
+              ))}
+          </FormField>
+          <FormField
+            as="select"
+            label="Sort by"
+            name="sortStudents"
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as 'name' | 'class' | 'email')}
+          >
+            <option value="name">Name</option>
+            <option value="class">Class</option>
+            <option value="email">Email</option>
+          </FormField>
+          <FormField
+            as="select"
+            label="Direction"
+            name="sortDirection"
+            value={sortDirection}
+            onChange={(e) => setSortDirection(e.target.value as 'asc' | 'desc')}
+          >
+            <option value="asc">Ascending</option>
+            <option value="desc">Descending</option>
+          </FormField>
+        </div>
+
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
             <thead>
@@ -372,14 +492,14 @@ function ManageStudents() {
               </tr>
             </thead>
             <tbody>
-              {students.length === 0 ? (
+              {filteredAndSortedStudents.length === 0 ? (
                 <tr>
                   <td colSpan={3} className="py-3 text-slate-500">
-                    No students yet.
+                    No students found.
                   </td>
                 </tr>
               ) : (
-                students.map((s) => (
+                pagedStudents.map((s) => (
                   <tr key={s.email} className="border-b border-slate-100">
                     <td className="py-2 pr-4 font-semibold">
                       <button
@@ -390,7 +510,9 @@ function ManageStudents() {
                         {s.fullName}
                       </button>
                     </td>
-                    <td className="py-2 pr-4">{s.classId}</td>
+                    <td className="py-2 pr-4">
+                      {s.classId ? classLabelMap.get(s.classId) ?? s.classId : 'Unassigned'}
+                    </td>
                     <td className="py-2 pr-4 text-slate-600">{s.email}</td>
                   </tr>
                 ))
@@ -398,6 +520,36 @@ function ManageStudents() {
             </tbody>
           </table>
         </div>
+
+        {filteredAndSortedStudents.length > 0 && (
+          <div className="mt-3 flex items-center justify-between text-sm text-slate-600">
+            <span>
+              Showing {(page - 1) * pageSize + 1}-{Math.min(page * pageSize, filteredAndSortedStudents.length)} of{' '}
+              {filteredAndSortedStudents.length}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="rounded border border-slate-300 px-3 py-1 disabled:opacity-50"
+              >
+                Previous
+              </button>
+              <span>
+                Page {page}/{totalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                className="rounded border border-slate-300 px-3 py-1 disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </Card>
     </div>
   )
@@ -618,11 +770,24 @@ interface ClassFormState {
   homeroomTeacher: string
 }
 
+function getAcademicYearLabel(startYear: number) {
+  return `${startYear}-${startYear + 1}`
+}
+
+function getDefaultAcademicYearLabel() {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = now.getMonth() + 1
+  // School year typically starts around Aug/Sep.
+  const startYear = month >= 8 ? year : year - 1
+  return getAcademicYearLabel(startYear)
+}
+
 const CLASS_INITIAL: ClassFormState = {
   id: '',
   name: '',
   grade: '10',
-  year: '2025-2026',
+  year: getDefaultAcademicYearLabel(),
   homeroomTeacher: '',
 }
 
@@ -848,6 +1013,11 @@ function ManageClasses() {
   const { push } = useToast()
   const navigate = useNavigate()
   const teachers = users.filter((u) => u.role === 'teacher')
+  const currentAcademicYear = getDefaultAcademicYearLabel()
+  const nextAcademicYear = useMemo(() => {
+    const startYear = Number(currentAcademicYear.split('-')[0])
+    return getAcademicYearLabel(startYear + 1)
+  }, [currentAcademicYear])
 
   const studentsByClass = useMemo(() => {
     const map = new Map<string, number>()
@@ -954,6 +1124,22 @@ function ManageClasses() {
             onChange={(e) => update('year', e.target.value)}
             error={errors.year}
           />
+          <div className="flex items-center gap-2 -mt-1">
+            <button
+              type="button"
+              onClick={() => update('year', currentAcademicYear)}
+              className="text-xs rounded border border-slate-300 px-2 py-1 text-slate-700 hover:bg-slate-50"
+            >
+              Use {currentAcademicYear}
+            </button>
+            <button
+              type="button"
+              onClick={() => update('year', nextAcademicYear)}
+              className="text-xs rounded border border-slate-300 px-2 py-1 text-slate-700 hover:bg-slate-50"
+            >
+              Use {nextAcademicYear}
+            </button>
+          </div>
           <FormField
             as="select"
             label="Homeroom Teacher (optional)"

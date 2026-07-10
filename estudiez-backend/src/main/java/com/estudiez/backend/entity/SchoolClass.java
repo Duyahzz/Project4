@@ -23,5 +23,7 @@ public class SchoolClass {
     private String room;
     @Column(nullable = false)
     private Boolean isActive = true;
+    @Column(nullable = false)
+    private Integer studentLimit = 40;
 }
 

@@ -103,7 +103,7 @@ export function ClassDetailPage() {
             </span>
           </h1>
           <p className="text-sm text-slate-500 mt-1">
-            {schoolClass.id} · {schoolClass.year} · Homeroom:{' '}
+            {schoolClass.id} · {schoolClass.year} · Limit: {students.length}/{schoolClass.studentLimit ?? 40} Students · Homeroom:{' '}
             {homeroom ? homeroom.fullName : 'Unassigned'}
           </p>
         </div>
@@ -350,6 +350,7 @@ interface ClassEditFormState {
   grade: string
   year: string
   homeroomTeacher: string
+  studentLimit: string
 }
 
 function ClassEditForm({
@@ -368,6 +369,7 @@ function ClassEditForm({
     grade: String(schoolClass.grade),
     year: schoolClass.year,
     homeroomTeacher: schoolClass.homeroomTeacher ?? '',
+    studentLimit: String(schoolClass.studentLimit ?? 40),
   })
   const [errors, setErrors] = useState<Partial<Record<keyof ClassEditFormState, string>>>({})
 
@@ -379,6 +381,9 @@ function ClassEditForm({
     const next: Partial<Record<keyof ClassEditFormState, string>> = {}
     if (!form.name.trim()) next.name = 'Class name is required.'
     if (!form.year.trim()) next.year = 'Academic year is required.'
+    if (!form.studentLimit.trim() || isNaN(Number(form.studentLimit)) || Number(form.studentLimit) <= 0) {
+      next.studentLimit = 'Student limit must be a positive number.'
+    }
     setErrors(next)
     if (Object.keys(next).length > 0) return
 
@@ -387,6 +392,7 @@ function ClassEditForm({
       grade: Number(form.grade) as Grade,
       year: form.year.trim(),
       homeroomTeacher: form.homeroomTeacher || undefined,
+      studentLimit: Number(form.studentLimit),
     })
     push('success', 'Class updated.')
     onDone()
@@ -419,6 +425,14 @@ function ClassEditForm({
           value={form.year}
           onChange={(e) => update('year', e.target.value)}
           error={errors.year}
+        />
+        <FormField
+          type="number"
+          label="Student Limit"
+          name="editClassStudentLimit"
+          value={form.studentLimit}
+          onChange={(e) => update('studentLimit', e.target.value)}
+          error={errors.studentLimit}
         />
         <FormField
           as="select"
