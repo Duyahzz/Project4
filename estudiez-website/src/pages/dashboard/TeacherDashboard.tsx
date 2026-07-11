@@ -677,6 +677,11 @@ function AttendanceTab({ subject, classIds, studentsByClass }: AttendanceTabProp
 
             {/* Modal body */}
             <div className="overflow-y-auto flex-1 px-5 py-4">
+              {isAlreadyTaken(activeSlot) && (
+                <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-lg text-xs flex items-center gap-2 mb-4 font-medium">
+                  <span>⚠️ Attendance has been saved and is locked. You cannot modify it.</span>
+                </div>
+              )}
               {(studentsByClass.get(activeSlot.classId) ?? []).length === 0 ? (
                 <p className="text-sm text-slate-500">No students in this class.</p>
               ) : (
@@ -713,6 +718,7 @@ function AttendanceTab({ subject, classIds, studentsByClass }: AttendanceTabProp
                           </button>
                         </div>
                         <select
+                          disabled={isAlreadyTaken(activeSlot)}
                           value={statuses[student.email] ?? 'present'}
                           onChange={(e) =>
                             setStatuses((prev) => ({
@@ -720,7 +726,7 @@ function AttendanceTab({ subject, classIds, studentsByClass }: AttendanceTabProp
                               [student.email]: e.target.value as AttendanceStatus,
                             }))
                           }
-                          className="rounded-md border border-slate-300 px-2 py-1 text-sm capitalize bg-white focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500"
+                          className="rounded-md border border-slate-300 px-2 py-1 text-sm capitalize bg-white focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-slate-100 disabled:text-slate-500"
                         >
                           {ATTENDANCE_OPTIONS.map((opt) => (
                             <option key={opt} value={opt}>
@@ -731,6 +737,7 @@ function AttendanceTab({ subject, classIds, studentsByClass }: AttendanceTabProp
                       </div>
                       {(expandedNotes.has(student.email) || !!notes[student.email]) && (
                         <input
+                          disabled={isAlreadyTaken(activeSlot)}
                           type="text"
                           placeholder="Add note for student (e.g. late, no homework...)"
                           value={notes[student.email] ?? ''}
@@ -740,7 +747,7 @@ function AttendanceTab({ subject, classIds, studentsByClass }: AttendanceTabProp
                               [student.email]: e.target.value,
                             }))
                           }
-                          className="rounded-md border border-slate-300 px-3 py-1.5 text-xs bg-white focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 w-full mt-0.5"
+                          className="rounded-md border border-slate-300 px-3 py-1.5 text-xs bg-white focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 w-full mt-0.5 disabled:bg-slate-100 disabled:text-slate-500"
                           autoFocus
                         />
                       )}
@@ -752,17 +759,26 @@ function AttendanceTab({ subject, classIds, studentsByClass }: AttendanceTabProp
 
             {/* Modal footer */}
             <div className="flex gap-2 px-5 py-4 border-t border-slate-200">
-              <button
-                onClick={saveAttendance}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-md px-4 py-2 text-sm"
-              >
-                Save Attendance
-              </button>
+              {!isAlreadyTaken(activeSlot) ? (
+                <button
+                  onClick={saveAttendance}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-md px-4 py-2 text-sm"
+                >
+                  Save Attendance
+                </button>
+              ) : (
+                <button
+                  disabled
+                  className="bg-slate-300 text-slate-500 font-semibold rounded-md px-4 py-2 text-sm cursor-not-allowed"
+                >
+                  Attendance Locked
+                </button>
+              )}
               <button
                 onClick={() => setActiveSlot(null)}
                 className="border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium rounded-md px-4 py-2 text-sm"
               >
-                Cancel
+                {isAlreadyTaken(activeSlot) ? 'Close' : 'Cancel'}
               </button>
             </div>
           </div>
@@ -812,26 +828,109 @@ const STUDY_HABITS_OPTIONS: { value: string; label: string }[] = [
 function buildAIPath(f: StudentEntry, examName: string): string {
   const perf = PERFORMANCE_LEVELS.find((p) => p.value === f.performanceLevel)?.label ?? f.performanceLevel
   const habits = STUDY_HABITS_OPTIONS.find((h) => h.value === f.studyHabits)?.label ?? f.studyHabits
+  const scoreNum = parseFloat(f.score) || 0
   const scoreStr = f.score ? ` | Score: ${f.score}/10` : ''
+
+  // 1. Determine Level and customized roadmap
+  let roadmap: string[] = []
+  let learningStrategy = ""
+  
+  if (scoreNum < 5 || f.performanceLevel === 'below-average' || f.performanceLevel === 'poor' || f.performanceLevel === 'weak') {
+    // WEAK / UNDERPERFORMING
+    learningStrategy = "Focus on foundational concepts. Don't rush into complex exercises."
+    roadmap = [
+      `  • Phase 1 (Week 1): Fundamentals Review`,
+      `    - Read textbook chapter summary for: "${f.topicsToImprove || f.weaknesses}"`,
+      `    - Re-watch basic video tutorials and compile a list of core definitions.`,
+      `  • Phase 2 (Week 2): Step-by-Step Practice`,
+      `    - Solve 3-5 basic level-1 questions daily on "${f.topicsToImprove || f.weaknesses}"`,
+      `    - Highlight formulas and show all working steps. Ask the teacher if stuck.`,
+      `  • Phase 3 (Week 3): Re-evaluate & Consolidate`,
+      `    - Redo the questions missed in "${examName}".`,
+      `    - Seek a 15-minute review session with the teacher or a peer tutor.`,
+      `  • Phase 4 (Week 4): Foundation Check`,
+      `    - Take a basic mock test under no time limit to verify understanding.`
+    ]
+  } else if (scoreNum >= 5 && scoreNum < 7 || f.performanceLevel === 'average') {
+    // AVERAGE / PASSING
+    learningStrategy = "Active recall & error analysis. Build confidence through structured practice."
+    roadmap = [
+      `  • Phase 1 (Week 1): Error Diagnosis`,
+      `    - Carefully write down why mistakes were made in "${examName}".`,
+      `    - Revise key formulas and concepts for: "${f.topicsToImprove || f.weaknesses}"`,
+      `  • Phase 2 (Week 2): Targeted Homework`,
+      `    - Complete all standard textbook exercises on "${f.topicsToImprove || f.weaknesses}"`,
+      `    - Focus on intermediate level word problems.`,
+      `  • Phase 3 (Week 3): Active Recall`,
+      `    - Create flashcards for core terms or formulas.`,
+      `    - Practice explaining the concepts to a classmate or family member.`,
+      `  • Phase 4 (Week 4): Mock Testing`,
+      `    - Take a timed mock test on the unit to improve speed and reduce exam anxiety.`
+    ]
+  } else if (scoreNum >= 7 && scoreNum < 9 || f.performanceLevel === 'good') {
+    // GOOD / PROFICIENT
+    learningStrategy = "Feynman Technique & Advanced problem solving to transition to excellence."
+    roadmap = [
+      `  • Phase 1 (Week 1): Advanced Concept Integration`,
+      `    - Study the connection between "${f.topicsMastered || f.strengths}" and "${f.topicsToImprove || f.weaknesses}".`,
+      `    - Write a one-page mindmap summarizing the entire topic.`,
+      `  • Phase 2 (Week 2): Challenge Exercises`,
+      `    - Solve advanced (starred) level questions on: "${f.topicsToImprove || f.weaknesses}"`,
+      `    - Learn to identify shortcut methods for faster calculation.`,
+      `  • Phase 3 (Week 3): Teach to Learn (Feynman)`,
+      `    - Help a classmate who is struggling with "${f.topicsMastered || f.strengths}".`,
+      `    - Explaining it to others will solidify your own high-level understanding.`,
+      `  • Phase 4 (Week 4): Time Management Exam Prep`,
+      `    - Complete practice papers under strict exam time constraints (e.g. 45 mins).`
+    ]
+  } else {
+    // EXCELLENT
+    learningStrategy = "Creative application & peer mentorship. Maintain elite performance."
+    roadmap = [
+      `  • Phase 1 (Week 1): Deep Exploration`,
+      `    - Explore real-world applications or extra-curricular resources related to "${f.topicsMastered || f.strengths}".`,
+      `    - Try solving Olympiad or competitive exam level problems.`,
+      `  • Phase 2 (Week 2): Project-based Learning`,
+      `    - Create a mini-project, coding poster, or summary document explaining: "${f.topicsMastered || f.strengths}"`,
+      `  • Phase 3 (Week 3): Peer Tutoring`,
+      `    - Act as a student mentor in class. Help explain difficult concepts to peers.`,
+      `  • Phase 4 (Week 4): Self-Directed Goals`,
+      `    - Work with the teacher to outline personal learning goals for the next unit.`
+    ]
+  }
+
+  // 2. Study Habit Recommendation
+  let habitAdvice = ""
+  if (f.studyHabits === 'needs-work') {
+    habitAdvice = `  → Urgent Intervention: Set up a structured 20-minute daily study block. Ask parents to sign a daily study log. Use website study resources.`
+  } else if (f.studyHabits === 'irregular') {
+    habitAdvice = `  → Action Needed: Establish a consistent weekly schedule (e.g. Tuesday/Thursday at 7 PM). Use the Pomodoro technique (25 min study, 5 min break) to combat procrastination.`
+  } else {
+    habitAdvice = `  → Keep it up! Optimize your study environment by removing distractions (phone in another room) and trying active recall retrieval practice.`
+  }
+
   return [
-    `📊 Performance: ${perf}${scoreStr} | Exam: ${examName}`,
+    `📊 Performance Summary: ${perf}${scoreStr}`,
+    `📝 Assessment: ${examName}`,
+    `--------------------------------------------------`,
+    `✅ Key Strengths:`,
+    `  • Demonstrated strength in: "${f.strengths}"`,
+    f.topicsMastered ? `  • Confirmed mastery of: "${f.topicsMastered}"` : '',
     '',
-    `✅ Strengths: ${f.strengths}`,
-    f.topicsMastered ? `🎯 Topics mastered: ${f.topicsMastered}` : '',
+    `⚠️ Improvement Focus:`,
+    `  • Target weakness: "${f.weaknesses}"`,
+    f.topicsToImprove ? `  • Priority topic: "${f.topicsToImprove}"` : '',
     '',
-    `⚠️ Areas to improve: ${f.weaknesses}`,
-    f.topicsToImprove ? `📌 Priority topics: ${f.topicsToImprove}` : '',
+    `🧠 Core Learning Strategy:`,
+    `  "${learningStrategy}"`,
     '',
-    `📚 Recommended study plan:`,
-    `  • Week 1–2: Focused daily practice on "${f.topicsToImprove || f.weaknesses}" (30 min/day)`,
-    `  • Week 3–4: Mixed exercises reinforcing "${f.topicsMastered || f.strengths}"`,
-    `  • End of month: Re-test on priority topics`,
+    `📅 Personalized 4-Week Improvement Path:`,
+    ...roadmap,
     '',
-    `🧑‍💼 Study habits: ${habits}`,
-    f.studyHabits !== 'consistent'
-      ? `  → Recommendation: Set a fixed daily study schedule and track completion.`
-      : `  → Great consistency — keep it up!`,
-    f.teacherNotes ? `\n📝 Teacher notes: ${f.teacherNotes}` : '',
+    `🧑‍💼 Study Habits & Consistency:`,
+    `  • Status: ${habits}`,
+    habitAdvice,
+    f.teacherNotes ? `\n📝 Teacher Guidance Notes:\n  "${f.teacherNotes}"` : '',
   ].filter(Boolean).join('\n')
 }
 
@@ -844,7 +943,7 @@ function MarksEvalTab({
   classIds: string[]
   studentsByClass: Map<string, User[]>
 }) {
-  const { semesters, exams, scores, evaluations, saveMarksAndEvaluationsBatch, classes } = useData()
+  const { semesters, exams, scores, evaluations, saveMarksAndEvaluationsBatch, classes, addExam } = useData()
   const { currentUser } = useAuth()
   const { push } = useToast()
 
@@ -866,6 +965,35 @@ function MarksEvalTab({
   const [entries, setEntries] = useState<Record<string, StudentEntry>>({})
   const [scoreErrors, setScoreErrors] = useState<Record<string, string>>({})
   const [expandedEmail, setExpandedEmail] = useState<string | null>(null)
+
+  const [showAddExam, setShowAddExam] = useState(false)
+  const [newExamName, setNewExamName] = useState('')
+  const [newExamWeight, setNewExamWeight] = useState(10)
+  const [newExamDate, setNewExamDate] = useState(() => new Date().toISOString().slice(0, 10))
+
+  const handleAddExamSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newExamName.trim()) {
+      push('error', 'Exam name is required.')
+      return
+    }
+    try {
+      await addExam({
+        classId,
+        semesterId,
+        subject,
+        name: newExamName.trim(),
+        date: newExamDate,
+        completed: false,
+        weight: newExamWeight / 100,
+      }, currentUser?.email ?? '')
+      push('success', `Exam "${newExamName.trim()}" created successfully.`)
+      setNewExamName('')
+      setShowAddExam(false)
+    } catch (err) {
+      push('error', 'Failed to create exam.')
+    }
+  }
 
   const availableExams = useMemo(
     () => exams.filter((e) => e.semesterId === semesterId && e.subject === subject && e.classId === classId),
@@ -1070,6 +1198,70 @@ function MarksEvalTab({
                             })}
                           </div>
                         )}
+
+                        <div className="mt-3 pt-2 border-t border-slate-100">
+                          {!showAddExam ? (
+                            <button
+                              onClick={() => {
+                                setShowAddExam(true);
+                                setNewExamDate(new Date().toISOString().slice(0, 10));
+                              }}
+                              className="w-full text-center text-xs py-1.5 border border-dashed border-slate-300 rounded-md hover:bg-slate-50 text-indigo-600 font-semibold"
+                            >
+                              + Add Exam
+                            </button>
+                          ) : (
+                            <form onSubmit={handleAddExamSubmit} className="space-y-2 pt-1 text-left">
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase">Exam Name</label>
+                                <input
+                                  type="text"
+                                  placeholder="e.g. Quiz 3"
+                                  value={newExamName}
+                                  onChange={(e) => setNewExamName(e.target.value)}
+                                  className="w-full text-xs rounded-md border border-slate-300 px-2 py-1 bg-white focus:ring-1 focus:ring-indigo-500 mt-0.5"
+                                />
+                              </div>
+                              <div className="grid grid-cols-2 gap-1.5">
+                                <div>
+                                  <label className="block text-[10px] font-bold text-slate-500 uppercase">Weight (%)</label>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max="100"
+                                    value={newExamWeight}
+                                    onChange={(e) => setNewExamWeight(Number(e.target.value))}
+                                    className="w-full text-xs rounded-md border border-slate-300 px-2 py-1 bg-white focus:ring-1 focus:ring-indigo-500 mt-0.5"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] font-bold text-slate-500 uppercase">Date</label>
+                                  <input
+                                    type="date"
+                                    value={newExamDate}
+                                    onChange={(e) => setNewExamDate(e.target.value)}
+                                    className="w-full text-xs rounded-md border border-slate-300 px-2 py-1 bg-white focus:ring-1 focus:ring-indigo-500 mt-0.5"
+                                  />
+                                </div>
+                              </div>
+                              <div className="flex gap-1.5 pt-1">
+                                <button
+                                  type="submit"
+                                  className="flex-1 text-center text-xs py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-md shadow-sm"
+                                >
+                                  Create
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowAddExam(false)}
+                                  className="flex-1 text-center text-xs py-1.5 border border-slate-300 hover:bg-slate-50 text-slate-600 rounded-md"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </form>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1207,7 +1399,25 @@ function MarksEvalTab({
                       max={10}
                       step={0.1}
                       value={entry.score}
-                      onChange={(e) => updateEntry(expandedEmail, { score: e.target.value })}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        const scoreNum = parseFloat(val)
+                        let matchedPerf = entry.performanceLevel
+                        if (!isNaN(scoreNum)) {
+                          if (scoreNum < 3.5) {
+                            matchedPerf = 'poor'
+                          } else if (scoreNum >= 3.5 && scoreNum < 5) {
+                            matchedPerf = 'below-average'
+                          } else if (scoreNum >= 5 && scoreNum < 7) {
+                            matchedPerf = 'average'
+                          } else if (scoreNum >= 7 && scoreNum < 9) {
+                            matchedPerf = 'good'
+                          } else if (scoreNum >= 9) {
+                            matchedPerf = 'excellent'
+                          }
+                        }
+                        updateEntry(expandedEmail, { score: val, performanceLevel: matchedPerf })
+                      }}
                       placeholder="e.g. 8.5"
                       className={`w-32 rounded-md border px-3 py-1.5 text-sm ${
                         scoreErrors[expandedEmail] ? 'border-rose-400 bg-rose-50' : 'border-slate-300'
@@ -1226,7 +1436,8 @@ function MarksEvalTab({
                     label="Performance Level"
                     name={`perf-${expandedEmail}`}
                     value={entry.performanceLevel}
-                    onChange={(e) => updateEntry(expandedEmail, { performanceLevel: e.target.value })}
+                    disabled={true}
+                    hint="Calculated automatically based on the score above"
                   >
                     {PERFORMANCE_LEVELS.map((p) => (
                       <option key={p.value} value={p.value}>{p.label}</option>

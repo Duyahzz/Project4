@@ -38,7 +38,7 @@ export type ApiMark        = components['schemas']['StudentMark']
 // ─── Base URL ────────────────────────────────────────────────────────────────
 // Points to backend running on localhost:8081
 // CORS is handled by Spring Security configuration on the backend
-export const API_BASE = 'http://localhost:8081'
+export const API_BASE = 'http://127.0.0.1:8081'
 
 // ─── Base fetch helpers ──────────────────────────────────────────────────────
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {

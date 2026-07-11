@@ -8,7 +8,7 @@ spring:
   datasource:
     url: jdbc:sqlserver://localhost:1433;databaseName=eStudentDB;encrypt=true;trustServerCertificate=true
     username: sa
-    password: YourStrong@Passw0rd
+    password: 1
     driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
 
   jpa:

@@ -249,11 +249,10 @@ export function ClassDetailPage() {
             type="button"
             onClick={() => { setProvisionOpen((v) => !v); setProvisionSearch('') }}
             disabled={enrolled >= limit && !provisionOpen}
-            className={`inline-flex items-center gap-1.5 text-sm font-semibold rounded-md px-3 py-1.5 transition-colors ${
-              enrolled >= limit && !provisionOpen
+            className={`inline-flex items-center gap-1.5 text-sm font-semibold rounded-md px-3 py-1.5 transition-colors ${enrolled >= limit && !provisionOpen
                 ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
                 : 'bg-indigo-600 hover:bg-indigo-700 text-white'
-            }`}
+              }`}
           >
             {provisionOpen ? '✕ Close' : '+ Add Student'}
           </button>
@@ -310,11 +309,10 @@ export function ClassDetailPage() {
                           )}
                         </td>
                         <td className="px-4 py-2">
-                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${
-                            u.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700'
-                            : u.status === 'PENDING_GRADE_ASSIGNMENT' ? 'bg-sky-100 text-sky-700'
-                            : 'bg-slate-100 text-slate-500'
-                          }`}>
+                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${u.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700'
+                              : u.status === 'PENDING_GRADE_ASSIGNMENT' ? 'bg-sky-100 text-sky-700'
+                                : 'bg-slate-100 text-slate-500'
+                            }`}>
                             {u.status ?? 'Unknown'}
                           </span>
                         </td>
@@ -390,9 +388,8 @@ export function ClassDetailPage() {
           <div className="flex flex-wrap gap-2 mb-3">
             <Link
               to={classDetailPath(classId)}
-              className={`rounded-full px-3 py-1 text-sm font-semibold ${
-                subject === '' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-              }`}
+              className={`rounded-full px-3 py-1 text-sm font-semibold ${subject === '' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
             >
               All
             </Link>
@@ -400,9 +397,8 @@ export function ClassDetailPage() {
               <Link
                 key={s.subject}
                 to={classDetailPath(classId, s.subject)}
-                className={`rounded-full px-3 py-1 text-sm font-semibold ${
-                  subject === s.subject ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                }`}
+                className={`rounded-full px-3 py-1 text-sm font-semibold ${subject === s.subject ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
               >
                 {s.subject}
               </Link>
@@ -439,7 +435,47 @@ export function ClassDetailPage() {
         </Card>
       )}
 
-      <SemesterProgress subjects={classSubjects.map((s) => s.subject)} />
+      <SemesterProgress
+        subjects={classSubjects.map((s) => s.subject)}
+        schoolClass={schoolClass}
+      />
+
+      <Card
+        title={`Students (${students.length})`}
+        description={subject ? `Showing marks for ${subject}.` : undefined}
+      >
+        {students.length === 0 ? (
+          <p className="text-sm text-slate-500">No students enrolled in this class.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-left text-slate-500">
+                  <th className="py-2 pr-4">Name</th>
+                  <th className="py-2 pr-4">Email</th>
+                  {subject ? (
+                    <>
+                      <th className="py-2 pr-4">{subject} Marks</th>
+                      <th className="py-2 pr-2 text-right">Average</th>
+                    </>
+                  ) : null}
+                </tr>
+              </thead>
+              <tbody>
+                {students.map((student) => (
+                  <StudentRow
+                    key={student.email}
+                    student={student}
+                    classId={classId}
+                    subject={subject}
+                    scores={scores}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
 
       {subject ? <SubjectProgress students={students} subject={subject} progress={progress} /> : null}
     </div>
@@ -716,10 +752,17 @@ const SEMESTER_INITIAL: SemesterFormState = {
   endDate: '',
 }
 
-function SemesterProgress({ subjects }: { subjects: string[] }) {
+function SemesterProgress({
+  subjects,
+  schoolClass,
+}: {
+  subjects: string[]
+  schoolClass: SchoolClass
+}) {
   const {
     semesters,
     exams,
+    timetable,
     addSemester,
     updateSemester,
     deleteSemester,
@@ -935,20 +978,30 @@ function SemesterProgress({ subjects }: { subjects: string[] }) {
         <p className="text-sm text-slate-500">This class has no subjects on the timetable yet.</p>
       ) : (
         <ul className="space-y-2">
-          {subjects.map((subjectName) => (
-            <SubjectExamRow
-              key={subjectName}
-              subject={subjectName}
-              semesterId={activeId}
-              exams={exams.filter((e) => e.semesterId === activeId && e.subject === subjectName)}
-              expanded={expanded === subjectName}
-              onToggle={() => setExpanded((prev) => (prev === subjectName ? null : subjectName))}
-              addExam={addExam}
-              updateExam={updateExam}
-              deleteExam={deleteExam}
-              push={push}
-            />
-          ))}
+          {subjects.map((subjectName) => {
+            const slot = timetable.find((s) => s.classId === schoolClass.id && s.subject === subjectName)
+            const teacherEmail = slot?.teacher || schoolClass.homeroomTeacher || ''
+            return (
+              <SubjectExamRow
+                key={subjectName}
+                subject={subjectName}
+                semesterId={activeId}
+                classId={schoolClass.id}
+                teacherEmail={teacherEmail}
+                exams={exams.filter(
+                  (e) => e.semesterId === activeId && e.subject === subjectName,
+                )}
+                expanded={expanded === subjectName}
+                onToggle={() =>
+                  setExpanded((prev) => (prev === subjectName ? null : subjectName))
+                }
+                addExam={addExam}
+                updateExam={updateExam}
+                deleteExam={deleteExam}
+                push={push}
+              />
+            )
+          })}
         </ul>
       )}
     </Card>
@@ -958,6 +1011,8 @@ function SemesterProgress({ subjects }: { subjects: string[] }) {
 function SubjectExamRow({
   subject,
   semesterId,
+  classId,
+  teacherEmail,
   exams,
   expanded,
   onToggle,
@@ -968,10 +1023,12 @@ function SubjectExamRow({
 }: {
   subject: string
   semesterId: string
+  classId: string
+  teacherEmail: string
   exams: Exam[]
   expanded: boolean
   onToggle: () => void
-  addExam: (exam: Omit<Exam, 'id'>) => void
+  addExam: (exam: Omit<Exam, 'id'>, teacherEmail: string) => void
   updateExam: (id: number, patch: Partial<Omit<Exam, 'id'>>) => void
   deleteExam: (id: number) => void
   push: (type: 'success' | 'error' | 'info', message: string) => void
@@ -990,12 +1047,13 @@ function SubjectExamRow({
       return
     }
     addExam({
+      classId,
       semesterId,
       subject,
       name: examName.trim(),
       date: examDate,
       completed: false,
-    })
+    }, teacherEmail)
     setExamName('')
     setExamDate('')
     push('success', `Exam added to ${subject}.`)

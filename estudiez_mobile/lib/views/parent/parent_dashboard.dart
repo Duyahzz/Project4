@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/language_provider.dart';
 import '../../models.dart';
 import '../student/student_dashboard.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../chat/chat_screen.dart';
 import '../profile/profile_screen.dart';
+import '../notification/notification_list_screen.dart';
 
 class ParentDashboard extends StatefulWidget {
   const ParentDashboard({Key? key}) : super(key: key);
@@ -18,11 +21,132 @@ class _ParentDashboardState extends State<ParentDashboard> {
   bool _isLoading = true;
   List<Map<String, dynamic>> _children = [];
   List<ChatGroup> _chatGroups = [];
+  List<NotificationItem> _notifications = [];
+  Set<int> _childClassIds = {};
+
+  DateTime? _lastReadNotificationsTime;
+  Timer? _notificationTimer;
 
   @override
   void initState() {
     super.initState();
+    _loadLastReadNotifsTime();
     _fetchChildren();
+    _startNotificationTimer();
+  }
+
+  Future<void> _loadLastReadNotifsTime() async {
+    final prefs = await SharedPreferences.getInstance();
+    final ms = prefs.getInt('last_read_notifications_timestamp');
+    if (ms != null) {
+      setState(() {
+        _lastReadNotificationsTime = DateTime.fromMillisecondsSinceEpoch(ms);
+      });
+    }
+  }
+
+  Future<void> _updateLastReadNotifsTime() async {
+    final now = DateTime.now();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('last_read_notifications_timestamp', now.millisecondsSinceEpoch);
+    setState(() {
+      _lastReadNotificationsTime = now;
+    });
+  }
+
+  @override
+  void dispose() {
+    _notificationTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startNotificationTimer() {
+    _notificationTimer = Timer.periodic(const Duration(seconds: 10), (timer) async {
+      await _silentFetchChildren();
+    });
+  }
+
+  Future<void> _silentFetchChildren() async {
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+    final api = auth.apiService;
+    final parentUserId = auth.currentUser?.userId ?? '';
+
+    try {
+      final parentsRes = await api.getParents();
+      String parentId = '';
+      for (var p in parentsRes) {
+        if (p.userId == parentUserId) {
+          parentId = p.parentId ?? '';
+          break;
+        }
+      }
+
+      final linksRes = await api.getParentLinks();
+      final childLinks = linksRes.where((l) => l.id.parentId == parentId).toList();
+
+      final studentsRes = await api.getStudents();
+      final enrollments = await api.getEnrollments();
+      final Set<int> childClassIds = {};
+
+      final List<Map<String, dynamic>> childList = [];
+      for (var link in childLinks) {
+        final studentId = link.id.studentId;
+        final studentObj = studentsRes.firstWhere(
+          (s) => s.studentId == studentId,
+          orElse: () => ApiStudent(studentId: studentId),
+        );
+
+        int? resolvedClassId;
+        for (var e in enrollments) {
+          if (e['studentId']?.toString() == studentId && e['status'] == 'ACTIVE') {
+            resolvedClassId = e['classId'] as int?;
+            if (resolvedClassId != null) {
+              childClassIds.add(resolvedClassId);
+            }
+            break;
+          }
+        }
+
+        final String uId = studentObj.userId ?? '';
+        final String fullName = api.userNamesMap[uId] ?? 'Student $studentId';
+        final String studentCode = studentObj.studentCode ?? '';
+
+        childList.add({
+          'studentId': studentId,
+          'fullName': fullName,
+          'studentCode': studentCode,
+          'relationship': link.relationship ?? 'Child',
+          'classId': resolvedClassId,
+        });
+      }
+
+      final allChats = await api.getChatGroups();
+      final filteredChats = allChats.where((g) => 
+        g.type == 'parent-teacher' && 
+        childClassIds.contains(int.tryParse(g.classId) ?? -1)
+      ).toList();
+
+      final allNotifs = await api.getNotifications();
+      final parentEmail = auth.currentUser?.email;
+      final filteredNotifs = allNotifs.where((n) {
+        final aud = n.audience.toLowerCase();
+        return aud == 'all' || 
+               (aud == 'parent' && n.target?.toLowerCase() == parentEmail?.toLowerCase()) ||
+               (aud == 'class' && childClassIds.contains(int.tryParse(n.target ?? '')));
+      }).toList();
+      filteredNotifs.sort((a, b) => b.id.compareTo(a.id));
+
+      if (mounted) {
+        setState(() {
+          _children = childList;
+          _chatGroups = filteredChats;
+          _notifications = filteredNotifs;
+          _childClassIds = childClassIds;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error silently fetching parent children: $e');
+    }
   }
 
   Future<void> _fetchChildren() async {
@@ -45,6 +169,7 @@ class _ParentDashboardState extends State<ParentDashboard> {
         setState(() {
           _children = [];
           _chatGroups = [];
+          _notifications = [];
           _isLoading = false;
         });
         return;
@@ -100,9 +225,22 @@ class _ParentDashboardState extends State<ParentDashboard> {
         childClassIds.contains(int.tryParse(g.classId) ?? -1)
       ).toList();
 
+      // Fetch notifications
+      final allNotifs = await api.getNotifications();
+      final parentEmail = auth.currentUser?.email;
+      final filteredNotifs = allNotifs.where((n) {
+        final aud = n.audience.toLowerCase();
+        return aud == 'all' || 
+               (aud == 'parent' && n.target?.toLowerCase() == parentEmail?.toLowerCase()) ||
+               (aud == 'class' && childClassIds.contains(int.tryParse(n.target ?? '')));
+      }).toList();
+      filteredNotifs.sort((a, b) => b.id.compareTo(a.id));
+
       setState(() {
         _children = childList;
         _chatGroups = filteredChats;
+        _notifications = filteredNotifs;
+        _childClassIds = childClassIds;
         _isLoading = false;
       });
     } catch (e) {
@@ -117,6 +255,20 @@ class _ParentDashboardState extends State<ParentDashboard> {
     final user = auth.currentUser;
     final lang = Provider.of<LanguageProvider>(context);
 
+    int unreadCount = 0;
+    if (_lastReadNotificationsTime == null) {
+      unreadCount = _notifications.length;
+    } else {
+      unreadCount = _notifications.where((n) {
+        try {
+          final notifDate = DateTime.parse(n.createdAt);
+          return notifDate.isAfter(_lastReadNotificationsTime!);
+        } catch (_) {
+          return false;
+        }
+      }).length;
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: Text(lang.t('parent_dashboard')),
@@ -126,6 +278,116 @@ class _ParentDashboardState extends State<ParentDashboard> {
           IconButton(
             icon: Text(lang.isVietnamese ? '🇻🇳' : '🇬🇧', style: const TextStyle(fontSize: 20)),
             onPressed: () => lang.toggleLanguage(),
+          ),
+          Stack(
+            alignment: Alignment.center,
+            children: [
+
+              IconButton(
+                icon: const Icon(Icons.notifications_none),
+                onPressed: () async {
+                  try {
+                    final api = Provider.of<AuthProvider>(context, listen: false).apiService;
+                    final rawNotifs = await api.getNotifications();
+                    final parentEmail = Provider.of<AuthProvider>(context, listen: false).currentUser?.email;
+                    final filteredNotifs = rawNotifs.where((n) {
+                      final aud = n.audience.toLowerCase();
+                      return aud == 'all' || 
+                             (aud == 'parent' && n.target?.toLowerCase() == parentEmail?.toLowerCase()) ||
+                             (aud == 'class' && _childClassIds.contains(int.tryParse(n.target ?? '')));
+                    }).toList();
+                    filteredNotifs.sort((a, b) => b.id.compareTo(a.id));
+                    setState(() {
+                      _notifications = filteredNotifs;
+                    });
+                  } catch (e) {
+                    debugPrint('Error refreshing notifications: $e');
+                  }
+
+                  await _updateLastReadNotifsTime();
+
+                  final result = await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => NotificationListScreen(notifications: _notifications),
+                    ),
+                  );
+
+                  if (result != null && result is Map) {
+                    final int? tabIndex = result['tabIndex'] as int?;
+                    final String? body = result['body'] as String?;
+                    if (tabIndex != null && tabIndex >= 0) {
+                      // Map tabIndex: 2 (Marks) -> index 1, 3 (Attendance) -> index 2
+                      int targetTab = 0;
+                      if (tabIndex == 2) targetTab = 1;
+                      else if (tabIndex == 3) targetTab = 2;
+
+                      // Parse child name from body: "Con của bạn (Bui Duc Minh)..."
+                      String studentName = "";
+                      if (body != null) {
+                        final match = RegExp(r"\(([^)]+)\)").firstMatch(body);
+                        if (match != null) {
+                          studentName = match.group(1) ?? "";
+                        }
+                      }
+
+                      // Find matching child
+                      Map<String, dynamic>? targetChild;
+                      if (studentName.isNotEmpty) {
+                        for (var child in _children) {
+                          if (child['fullName'].toString().toLowerCase() == studentName.toLowerCase()) {
+                            targetChild = child;
+                            break;
+                          }
+                        }
+                      }
+                      // Default to first child if not found
+                      if (targetChild == null && _children.isNotEmpty) {
+                        targetChild = _children[0];
+                      }
+
+                      if (targetChild != null) {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => ChildMonitorScreen(
+                              studentId: targetChild!['studentId'].toString(),
+                              fullName: targetChild!['fullName'].toString(),
+                              initialIndex: targetTab,
+                            ),
+                          ),
+                        );
+                      }
+                    }
+                  }
+                },
+              ),
+              if (unreadCount > 0)
+                Positioned(
+                  right: 8,
+                  top: 8,
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    constraints: const BoxConstraints(
+                      minWidth: 14,
+                      minHeight: 14,
+                    ),
+                    child: Text(
+                      '$unreadCount',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 8,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+            ],
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -292,6 +554,47 @@ class _ParentDashboardState extends State<ParentDashboard> {
                             );
                           },
                         ),
+                  const SizedBox(height: 24),
+                  Text(
+                    lang.isVietnamese ? 'Thông báo' : 'Notifications',
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0A2540)),
+                  ),
+                  const SizedBox(height: 8),
+                  _notifications.isEmpty
+                      ? Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(16.0),
+                            child: Center(
+                              child: Text(
+                                lang.isVietnamese ? 'Không có thông báo mới' : 'No new notifications',
+                                style: const TextStyle(color: Colors.grey),
+                              ),
+                            ),
+                          ),
+                        )
+                      : ListView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: _notifications.length > 3 ? 3 : _notifications.length,
+                          itemBuilder: (context, idx) {
+                            final item = _notifications[idx];
+                            final localized = localizeNotification(item.title, item.body, lang.isVietnamese);
+                            final dispTitle = localized['title'] ?? item.title;
+                            final dispBody = localized['body'] ?? item.body;
+                            return Card(
+                              margin: const EdgeInsets.symmetric(vertical: 6),
+                              child: ListTile(
+                                leading: const CircleAvatar(
+                                  backgroundColor: Color(0x1F0A2540),
+                                  child: Icon(Icons.notifications_active, color: Color(0xFF0A2540)),
+                                ),
+                                title: Text(dispTitle, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                                subtitle: Text('$dispBody\nSent by: ${item.sender} • ${item.date}', style: const TextStyle(fontSize: 12)),
+                                isThreeLine: true,
+                              ),
+                            );
+                          },
+                        ),
                 ],
               ),
             ),
@@ -303,7 +606,8 @@ class _ParentDashboardState extends State<ParentDashboard> {
 class ChildMonitorScreen extends StatefulWidget {
   final String studentId;
   final String fullName;
-  const ChildMonitorScreen({Key? key, required this.studentId, required this.fullName}) : super(key: key);
+  final int initialIndex;
+  const ChildMonitorScreen({Key? key, required this.studentId, required this.fullName, this.initialIndex = 0}) : super(key: key);
 
   @override
   State<ChildMonitorScreen> createState() => _ChildMonitorScreenState();
@@ -318,11 +622,61 @@ class _ChildMonitorScreenState extends State<ChildMonitorScreen> {
 
   int _selectedSemester = 1;
   int _selectedTimetableSemester = 1;
+  Timer? _childDataTimer;
 
   @override
   void initState() {
     super.initState();
     _fetchChildData();
+    _startChildDataTimer();
+  }
+
+  @override
+  void dispose() {
+    _childDataTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startChildDataTimer() {
+    _childDataTimer = Timer.periodic(const Duration(seconds: 10), (timer) async {
+      await _pollChildData();
+    });
+  }
+
+  Future<void> _pollChildData() async {
+    final api = Provider.of<AuthProvider>(context, listen: false).apiService;
+    try {
+      int? resolvedClassId;
+      try {
+        final enrollments = await api.getEnrollments();
+        for (var e in enrollments) {
+          if (e['studentId']?.toString() == widget.studentId && e['status'] == 'ACTIVE') {
+            resolvedClassId = e['classId'] as int?;
+            break;
+          }
+        }
+      } catch (e) {
+        debugPrint('Error resolving child classId: $e');
+      }
+
+      final results = await Future.wait([
+        api.getTimetable(resolvedClassId),
+        api.getStudentMarks(widget.studentId),
+        api.getAttendanceForStudent(widget.studentId),
+        api.getLessons(resolvedClassId ?? 0),
+      ]);
+
+      if (mounted) {
+        setState(() {
+          _timetable = results[0] as List<TimetableSlot>;
+          _marks = results[1] as List<ScoreDetail>;
+          _attendance = results[2] as List<AttendanceRecord>;
+          _lessons = results[3] as List<LessonSession>;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error polling child details: $e');
+    }
   }
 
   Future<void> _fetchChildData() async {
@@ -355,6 +709,11 @@ class _ChildMonitorScreenState extends State<ChildMonitorScreen> {
         _marks = results[1] as List<ScoreDetail>;
         _attendance = results[2] as List<AttendanceRecord>;
         _lessons = results[3] as List<LessonSession>;
+        if (_marks.isNotEmpty) {
+          final sorted = List<ScoreDetail>.from(_marks);
+          sorted.sort((a, b) => b.date.compareTo(a.date));
+          _selectedSemester = sorted.first.semesterId;
+        }
         _isLoading = false;
       });
     } catch (e) {
@@ -368,6 +727,7 @@ class _ChildMonitorScreenState extends State<ChildMonitorScreen> {
     final lang = Provider.of<LanguageProvider>(context);
     return DefaultTabController(
       length: 3,
+      initialIndex: widget.initialIndex,
       child: Scaffold(
         appBar: AppBar(
           title: Text(widget.fullName),
@@ -567,6 +927,125 @@ class _ChildMonitorScreenState extends State<ChildMonitorScreen> {
     );
   }
 
+  void _showEvaluationDetailsSheet(BuildContext context, ScoreDetail mark, Color color) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.6,
+          minChildSize: 0.4,
+          maxChildSize: 0.9,
+          builder: (context, scrollController) {
+            return SingleChildScrollView(
+              controller: scrollController,
+              padding: const EdgeInsets.all(20.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 50,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[300],
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    mark.subject,
+                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                  Text(
+                    mark.description,
+                    style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Score:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: color.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '${mark.scoreReceived} / 10',
+                          style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 30),
+                  if (mark.strengths != null && mark.strengths!.isNotEmpty) ...[
+                    const Text('✅ Strengths:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.green)),
+                    const SizedBox(height: 6),
+                    Text(mark.strengths!, style: const TextStyle(fontSize: 14)),
+                    const SizedBox(height: 16),
+                  ],
+                  if (mark.weaknesses != null && mark.weaknesses!.isNotEmpty) ...[
+                    const Text('⚠️ Areas to Improve:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.orange)),
+                    const SizedBox(height: 6),
+                    Text(mark.weaknesses!, style: const TextStyle(fontSize: 14)),
+                    const SizedBox(height: 16),
+                  ],
+                  if (mark.suggestedPath != null && mark.suggestedPath!.isNotEmpty) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.indigo[50],
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.indigo[100]!),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Row(
+                            children: [
+                              Icon(Icons.psychology, color: Colors.indigo),
+                              SizedBox(width: 8),
+                              Text(
+                                'AI Suggested Learning Path',
+                                style: TextStyle(fontWeight: FontWeight.bold, color: Colors.indigo, fontSize: 15),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            mark.suggestedPath!,
+                            style: const TextStyle(fontSize: 13, height: 1.5, color: Colors.black87),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ] else ...[
+                    const Center(
+                      child: Text(
+                        'No detailed AI learning path generated for this assessment.',
+                        style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 20),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   Widget _buildMarksTab(LanguageProvider lang) {
     final filtered = _marks.where((m) => m.semesterId == _selectedSemester).toList();
 
@@ -589,18 +1068,35 @@ class _ChildMonitorScreenState extends State<ChildMonitorScreen> {
 
                     return Card(
                       child: ListTile(
+                        onTap: () => _showEvaluationDetailsSheet(context, mark, color),
                         leading: CircleAvatar(
                           backgroundColor: color.withOpacity(0.1),
                           child: Text(score.toStringAsFixed(1), style: TextStyle(color: color, fontWeight: FontWeight.bold)),
                         ),
                         title: Text(mark.subject, style: const TextStyle(fontWeight: FontWeight.bold)),
                         subtitle: Text('${mark.description}\n${lang.t('date_label')}: ${mark.date.substring(0, 10)}'),
+                        trailing: const Icon(Icons.chevron_right, color: Colors.grey),
                         isThreeLine: true,
                       ),
                     );
                   },
                 ),
         ),
+        if (filtered.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.all(12.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.info_outline, size: 16, color: Colors.grey[600]),
+                const SizedBox(width: 6),
+                Text(
+                  'Tap on any card to view detailed feedback & AI Path',
+                  style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                ),
+              ],
+            ),
+          ),
       ],
     );
   }
@@ -664,6 +1160,27 @@ class _ChildMonitorScreenState extends State<ChildMonitorScreen> {
                   itemBuilder: (context, idx) {
                     final subjectName = sortedSubjects[idx];
                     final records = grouped[subjectName] ?? [];
+
+                    // Sort records by session date in descending order (most recent first)
+                    records.sort((a, b) {
+                      LessonSession? lessonA;
+                      for (var l in _lessons) {
+                        if (l.lessonSessionId == a.lessonSessionId) {
+                          lessonA = l;
+                          break;
+                        }
+                      }
+                      LessonSession? lessonB;
+                      for (var l in _lessons) {
+                        if (l.lessonSessionId == b.lessonSessionId) {
+                          lessonB = l;
+                          break;
+                        }
+                      }
+                      final dateA = lessonA?.sessionDate ?? '';
+                      final dateB = lessonB?.sessionDate ?? '';
+                      return dateB.compareTo(dateA);
+                    });
 
                     // Calculate stats
                     int present = 0;

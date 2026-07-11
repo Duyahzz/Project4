@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 class User {
   final String? userId;
   final String username;
@@ -33,11 +35,19 @@ class User {
       else if (roleId == 4) roleStr = 'parent';
     }
 
+    String emailVal = json['email'] ?? '';
+    if (emailVal.trim().isEmpty && roleStr == 'student') {
+      final usernameVal = json['username'] ?? '';
+      if (usernameVal.isNotEmpty) {
+        emailVal = '${usernameVal.toLowerCase()}@estudiez.edu.vn';
+      }
+    }
+
     return User(
       userId: json['userId'] ?? json['id'],
       username: json['username'] ?? '',
       fullName: json['fullName'] ?? '',
-      email: json['email'] ?? '',
+      email: emailVal,
       phone: json['phone'],
       role: roleStr,
       isActive: json['isActive'] ?? true,
@@ -234,18 +244,22 @@ class NotificationItem {
   final String title;
   final String body;
   final String date;
+  final String createdAt;
   final String audience; // 'class' | 'grade' | 'all'
   final String? target;
   final String sender;
+  final String category; // 'ATTENDANCE' | 'MARK' | 'GENERAL'
 
   NotificationItem({
     required this.id,
     required this.title,
     required this.body,
     required this.date,
+    required this.createdAt,
     required this.audience,
     this.target,
     required this.sender,
+    required this.category,
   });
 
   factory NotificationItem.fromJson(Map<String, dynamic> json, Map<String, String> userNamesMap) {
@@ -256,9 +270,11 @@ class NotificationItem {
       title: json['title'] ?? '',
       body: json['content'] ?? '',
       date: rawDate.toString().length >= 10 ? rawDate.toString().substring(0, 10) : rawDate,
+      createdAt: rawDate.toString(),
       audience: (json['targetType'] ?? 'class').toString().toLowerCase(),
       target: json['targetId']?.toString(),
       sender: userNamesMap[tId] ?? tId,
+      category: (json['category'] ?? 'GENERAL').toString().toUpperCase(),
     );
   }
 }
@@ -304,6 +320,9 @@ class ScoreDetail {
   final String date;
   final double scoreReceived;
   final int semesterId;
+  final String? strengths;
+  final String? weaknesses;
+  final String? suggestedPath;
 
   ScoreDetail({
     required this.id,
@@ -315,11 +334,30 @@ class ScoreDetail {
     required this.date,
     required this.scoreReceived,
     this.semesterId = 1,
+    this.strengths,
+    this.weaknesses,
+    this.suggestedPath,
   });
 
   factory ScoreDetail.fromJson(Map<String, dynamic> json, Map<String, dynamic> assessmentJson, Map<int, String> subjectMap, Map<String, String> userEmailsMap) {
     final sId = assessmentJson['subjectId'] ?? 0;
     final studId = json['studentId'] ?? '';
+    
+    String? strengths;
+    String? weaknesses;
+    String? suggestedPath;
+    final remarkStr = json['remark'] as String?;
+    if (remarkStr != null && remarkStr.trim().startsWith('{')) {
+      try {
+        final parsed = jsonDecode(remarkStr);
+        strengths = parsed['strengths'] as String?;
+        weaknesses = parsed['weaknesses'] as String?;
+        suggestedPath = parsed['suggestedPath'] as String?;
+      } catch (e) {
+        print('Error parsing remark JSON in ScoreDetail: $e');
+      }
+    }
+
     return ScoreDetail(
       id: json['studentMarkId'] ?? 0,
       studentEmail: userEmailsMap[studId] ?? studId,
@@ -330,6 +368,9 @@ class ScoreDetail {
       date: assessmentJson['assessmentDate'] ?? '',
       scoreReceived: (json['score'] ?? 0.0).toDouble(),
       semesterId: assessmentJson['semesterId'] ?? 1,
+      strengths: strengths,
+      weaknesses: weaknesses,
+      suggestedPath: suggestedPath,
     );
   }
 }
