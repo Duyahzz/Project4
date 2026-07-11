@@ -194,6 +194,15 @@ export const getSchoolYears = () =>
 export const findOrCreateSchoolYear = (name: string) =>
   apiPost<ApiSchoolYear>('/api/school-years/find-or-create', { name })
 
+// ─── Enrollment ────────────────────────────────────────────────────────────────
+/** Enroll a student into a class. Rejects if class is at capacity. */
+export const enrollStudentInClass = (classId: string, studentId: string) =>
+  apiPost<{ message: string }>('/api/enrollments/enroll', { classId, studentId })
+
+/** Remove a student from a class (soft-delete their enrollment). */
+export const removeStudentFromClass = (classId: string, studentId: string) =>
+  apiPost<{ message: string }>('/api/enrollments/remove', { classId, studentId })
+
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 export interface LoginResponse {
   userId?: string

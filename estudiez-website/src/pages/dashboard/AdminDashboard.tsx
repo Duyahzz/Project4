@@ -27,8 +27,12 @@ export function AdminDashboard() {
   }, [classes])
 
   const counts = useMemo(() => {
+    const activeStudents = students.filter(s => s.status === 'ACTIVE')
+    const unassignedStudents = students.filter(s => s.status === 'PENDING_GRADE_ASSIGNMENT' || (!s.classId && s.status !== 'GRADUATED'))
+    const graduatedStudents = students.filter(s => s.status === 'GRADUATED')
+
     const byGrade = { 10: 0, 11: 0, 12: 0 } as Record<Grade, number>
-    for (const student of students) {
+    for (const student of activeStudents) {
       const grade = student.classId ? classGradeMap.get(student.classId) ?? student.grade : student.grade
       if (grade) byGrade[grade] += 1
     }
@@ -38,17 +42,22 @@ export function AdminDashboard() {
         id: schoolClass.id,
         name: schoolClass.name,
         grade: schoolClass.grade,
-        count: students.filter((student) => student.classId === schoolClass.id).length,
+        count: students.filter((student) => student.classId === schoolClass.id && student.status === 'ACTIVE').length,
       }))
       .sort((a, b) => a.name.localeCompare(b.name))
 
     return {
-      students: students.length,
+      totalStudents: students.length,
+      activeStudents: activeStudents.length,
+      unassignedStudents: unassignedStudents.length,
+      graduatedStudents: graduatedStudents.length,
       teachers: users.filter((u) => u.role === 'teacher').length,
       parents: users.filter((u) => u.role === 'parent').length,
       classes: classes.length,
       byGrade,
       byClass,
+      unassignedList: unassignedStudents,
+      graduatedList: graduatedStudents,
     }
   }, [users, classes, students, classGradeMap])
 
@@ -87,53 +96,108 @@ export function AdminDashboard() {
 
       {activeView === 'overview' ? (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <StatCard label="Students" value={counts.students} />
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <StatCard label="Active Students" value={counts.activeStudents} />
+            <StatCard label="New Students (Unassigned)" value={counts.unassignedStudents} />
+            <StatCard label="Graduated Students" value={counts.graduatedStudents} />
             <StatCard label="Teachers" value={counts.teachers} />
-            <StatCard label="Parents" value={counts.parents} />
             <StatCard label="Classes" value={counts.classes} />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <Card title="Students by Grade">
-              <ul className="space-y-2">
-                {[10, 11, 12].map((grade) => (
-                  <li
-                    key={grade}
-                    className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2"
-                  >
-                    <span className="text-slate-700">Grade {grade}</span>
-                    <span className="font-semibold text-indigo-700">{counts.byGrade[grade as Grade]}</span>
-                  </li>
-                ))}
-              </ul>
-            </Card>
-
-            <Card title="Students by Class">
-              {counts.byClass.length === 0 ? (
-                <p className="text-sm text-slate-500">No classes found.</p>
-              ) : (
-                <ul className="space-y-2 max-h-80 overflow-auto pr-1">
-                  {counts.byClass.map((item) => (
+            <div className="space-y-4">
+              <Card title="Active Students by Grade">
+                <ul className="space-y-2">
+                  {[10, 11, 12].map((grade) => (
                     <li
-                      key={item.id}
-                      className="rounded-lg border border-slate-200"
+                      key={grade}
+                      className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2"
                     >
-                      <button
-                        type="button"
-                        onClick={() => navigate(classDetailPath(item.id))}
-                        className="w-full px-3 py-2 flex items-center justify-between text-left hover:bg-slate-50 rounded-lg"
-                      >
-                        <span className="text-slate-700">
-                          {item.name} <span className="text-slate-400">(Grade {item.grade})</span>
-                        </span>
-                        <span className="font-semibold text-indigo-700">{item.count}</span>
-                      </button>
+                      <span className="text-slate-700 font-medium">Grade {grade}</span>
+                      <span className="font-bold text-indigo-600 bg-indigo-50 px-2.5 py-0.5 rounded-full text-sm">
+                        {counts.byGrade[grade as Grade]}
+                      </span>
                     </li>
                   ))}
                 </ul>
-              )}
-            </Card>
+              </Card>
+
+              <Card title={`New Students Awaiting Class Allocation (${counts.unassignedList.length})`}>
+                {counts.unassignedList.length === 0 ? (
+                  <p className="text-sm text-slate-500">All students are allocated to a class.</p>
+                ) : (
+                  <ul className="space-y-2 max-h-60 overflow-auto pr-1">
+                    {counts.unassignedList.map((student) => (
+                      <li
+                        key={student.email}
+                        className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 bg-slate-50/50 hover:bg-slate-50 transition-colors"
+                      >
+                        <div>
+                          <p className="font-semibold text-slate-900 text-sm">{student.fullName}</p>
+                          <p className="text-xs text-slate-400 font-light">{student.email}</p>
+                        </div>
+                        <span className="text-xs font-semibold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+                          Unassigned
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Card>
+            </div>
+
+            <div className="space-y-4">
+              <Card title="Active Students by Class">
+                {counts.byClass.length === 0 ? (
+                  <p className="text-sm text-slate-500">No classes found.</p>
+                ) : (
+                  <ul className="space-y-2 max-h-60 overflow-auto pr-1">
+                    {counts.byClass.map((item) => (
+                      <li
+                        key={item.id}
+                        className="rounded-lg border border-slate-200"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => navigate(classDetailPath(item.id))}
+                          className="w-full px-3 py-2 flex items-center justify-between text-left hover:bg-slate-50 rounded-lg transition-colors"
+                        >
+                          <span className="text-slate-700 font-medium">
+                            {item.name} <span className="text-slate-400 text-xs">(Grade {item.grade})</span>
+                          </span>
+                          <span className="font-bold text-indigo-600 bg-indigo-50 px-2.5 py-0.5 rounded-full text-sm">
+                            {item.count}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Card>
+
+              <Card title={`Graduated Students Alumni (${counts.graduatedList.length})`}>
+                {counts.graduatedList.length === 0 ? (
+                  <p className="text-sm text-slate-500">No graduated students found.</p>
+                ) : (
+                  <ul className="space-y-2 max-h-60 overflow-auto pr-1">
+                    {counts.graduatedList.map((student) => (
+                      <li
+                        key={student.email}
+                        className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 bg-emerald-50/20 hover:bg-emerald-50/40 transition-colors"
+                      >
+                        <div>
+                          <p className="font-semibold text-slate-900 text-sm">{student.fullName}</p>
+                          <p className="text-xs text-slate-400 font-light">{student.email}</p>
+                        </div>
+                        <span className="text-xs font-semibold bg-emerald-100 text-emerald-700 px-2.5 py-0.5 rounded-full">
+                          Graduated
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Card>
+            </div>
           </div>
         </>
       ) : (
