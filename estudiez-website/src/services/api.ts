@@ -52,11 +52,15 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     try {
       const bodyText = await res.text()
       if (bodyText) {
-        const parsed = JSON.parse(bodyText)
-        if (parsed && parsed.message) {
-          errorMsg = parsed.message
-        } else if (typeof parsed === 'string') {
-          errorMsg = parsed
+        try {
+          const parsed = JSON.parse(bodyText)
+          if (parsed && parsed.message) {
+            errorMsg = parsed.message
+          } else if (typeof parsed === 'string') {
+            errorMsg = parsed
+          }
+        } catch {
+          errorMsg = bodyText
         }
       }
     } catch (e) {
@@ -65,7 +69,12 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(errorMsg)
   }
   const text = await res.text()
-  return text ? (JSON.parse(text) as T) : (undefined as unknown as T)
+  if (!text) return undefined as unknown as T
+  try {
+    return JSON.parse(text) as T
+  } catch (e) {
+    return text as unknown as T
+  }
 }
 
 const apiGet   = <T>(path: string)               => apiFetch<T>(path)
@@ -261,6 +270,13 @@ export function mapApiUsersToFrontend(
     if (role === 'teacher') {
       const t = teacherByUserId.get(uIdLower)
       if (t?.subjectId) base.subject = SUBJECT_ID_MAP[t.subjectId] ?? String(t.subjectId)
+    }
+
+    if (role === 'student' && student) {
+      const s = student as any
+      if (s.currentGrade != null) {
+        base.grade = s.currentGrade as Grade
+      }
     }
 
     return base

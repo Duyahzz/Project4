@@ -440,43 +440,6 @@ export function ClassDetailPage() {
         schoolClass={schoolClass}
       />
 
-      <Card
-        title={`Students (${students.length})`}
-        description={subject ? `Showing marks for ${subject}.` : undefined}
-      >
-        {students.length === 0 ? (
-          <p className="text-sm text-slate-500">No students enrolled in this class.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 text-left text-slate-500">
-                  <th className="py-2 pr-4">Name</th>
-                  <th className="py-2 pr-4">Email</th>
-                  {subject ? (
-                    <>
-                      <th className="py-2 pr-4">{subject} Marks</th>
-                      <th className="py-2 pr-2 text-right">Average</th>
-                    </>
-                  ) : null}
-                </tr>
-              </thead>
-              <tbody>
-                {students.map((student) => (
-                  <StudentRow
-                    key={student.email}
-                    student={student}
-                    classId={classId}
-                    subject={subject}
-                    scores={scores}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
-
       {subject ? <SubjectProgress students={students} subject={subject} progress={progress} /> : null}
     </div>
   )

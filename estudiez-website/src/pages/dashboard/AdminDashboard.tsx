@@ -130,15 +130,21 @@ export function AdminDashboard() {
                     {counts.unassignedList.map((student) => (
                       <li
                         key={student.email}
-                        className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 bg-slate-50/50 hover:bg-slate-50 transition-colors"
+                        className="rounded-lg border border-slate-200"
                       >
-                        <div>
-                          <p className="font-semibold text-slate-900 text-sm">{student.fullName}</p>
-                          <p className="text-xs text-slate-400 font-light">{student.email}</p>
-                        </div>
-                        <span className="text-xs font-semibold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
-                          Unassigned
-                        </span>
+                        <button
+                          type="button"
+                          onClick={() => navigate(userDetailPath(student.email))}
+                          className="w-full px-3 py-2 flex items-center justify-between text-left hover:bg-slate-50 rounded-lg transition-colors bg-slate-50/50"
+                        >
+                          <div>
+                            <p className="font-semibold text-slate-900 text-sm hover:text-indigo-600 transition-colors">{student.fullName}</p>
+                            <p className="text-xs text-slate-400 font-light">{student.email}</p>
+                          </div>
+                          <span className="text-xs font-semibold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+                            Unassigned
+                          </span>
+                        </button>
                       </li>
                     ))}
                   </ul>
@@ -183,15 +189,21 @@ export function AdminDashboard() {
                     {counts.graduatedList.map((student) => (
                       <li
                         key={student.email}
-                        className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2 bg-emerald-50/20 hover:bg-emerald-50/40 transition-colors"
+                        className="rounded-lg border border-slate-200"
                       >
-                        <div>
-                          <p className="font-semibold text-slate-900 text-sm">{student.fullName}</p>
-                          <p className="text-xs text-slate-400 font-light">{student.email}</p>
-                        </div>
-                        <span className="text-xs font-semibold bg-emerald-100 text-emerald-700 px-2.5 py-0.5 rounded-full">
-                          Graduated
-                        </span>
+                        <button
+                          type="button"
+                          onClick={() => navigate(userDetailPath(student.email))}
+                          className="w-full px-3 py-2 flex items-center justify-between text-left hover:bg-emerald-50/40 rounded-lg transition-colors bg-emerald-50/20"
+                        >
+                          <div>
+                            <p className="font-semibold text-slate-900 text-sm hover:text-indigo-600 transition-colors">{student.fullName}</p>
+                            <p className="text-xs text-slate-400 font-light">{student.email}</p>
+                          </div>
+                          <span className="text-xs font-semibold bg-emerald-100 text-emerald-700 px-2.5 py-0.5 rounded-full">
+                            Graduated
+                          </span>
+                        </button>
                       </li>
                     ))}
                   </ul>

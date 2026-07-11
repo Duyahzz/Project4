@@ -24,15 +24,38 @@ public class SchoolClassService {
         return classRepo.findBySchoolYearId(schoolYearId);
     }
 
-    public SchoolClass create(SchoolClass schoolClass) { return classRepo.save(schoolClass); }
+    public SchoolClass create(SchoolClass schoolClass) {
+        String program = schoolClass.getTrainingProgram() == null ? "REGULAR" : schoolClass.getTrainingProgram();
+        if (classRepo.existsBySchoolYearIdAndNameAndTrainingProgram(
+                schoolClass.getSchoolYearId(), schoolClass.getName(), program)) {
+            throw new IllegalArgumentException(
+                "A class named '" + schoolClass.getName() + "' with training program '" + program
+                + "' already exists in this school year.");
+        }
+        return classRepo.save(schoolClass);
+    }
 
     public SchoolClass update(Integer id, SchoolClass updated) {
         SchoolClass sc = findById(id);
+        String program = updated.getTrainingProgram() == null ? sc.getTrainingProgram() : updated.getTrainingProgram();
+        String name    = updated.getName() == null ? sc.getName() : updated.getName();
+
+        if (classRepo.existsBySchoolYearIdAndNameAndTrainingProgramAndClassIdNot(
+                sc.getSchoolYearId(), name, program, id)) {
+            throw new IllegalArgumentException(
+                "A class named '" + name + "' with training program '" + program
+                + "' already exists in this school year.");
+        }
+
         sc.setName(updated.getName());
         sc.setRoom(updated.getRoom());
         sc.setHomeroomTeacherId(updated.getHomeroomTeacherId());
-        sc.setIsActive(updated.getIsActive());
-        sc.setTrainingProgram(updated.getTrainingProgram());
+        if (updated.getIsActive() != null) {
+            sc.setIsActive(updated.getIsActive());
+        }
+        if (updated.getTrainingProgram() != null) {
+            sc.setTrainingProgram(updated.getTrainingProgram());
+        }
         if (updated.getStudentLimit() != null) {
             sc.setStudentLimit(updated.getStudentLimit());
         }
@@ -44,6 +67,3 @@ public class SchoolClassService {
         classRepo.deleteById(id);
     }
 }
-
-
-

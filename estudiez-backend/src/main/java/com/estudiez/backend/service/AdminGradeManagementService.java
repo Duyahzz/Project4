@@ -147,6 +147,20 @@ public class AdminGradeManagementService {
             return;
         }
 
+        // Guard: two source classes must not share the same target class
+        java.util.Map<Integer, Integer> targetToSource = new java.util.HashMap<>();
+        for (com.estudiez.backend.dto.ClassPromotionMapping mapping : request.getClassMappings()) {
+            if (mapping.getTargetClassId() == null) continue;
+            Integer prev = targetToSource.put(mapping.getTargetClassId(), mapping.getSourceClassId());
+            if (prev != null) {
+                SchoolClass dup = classRepo.findById(mapping.getTargetClassId()).orElse(null);
+                String dupName = dup != null ? dup.getName() : "#" + mapping.getTargetClassId();
+                throw new IllegalArgumentException(
+                    "Duplicate target class detected: class '" + dupName
+                    + "' is mapped to more than one source class. Each target class can only receive students from one source.");
+            }
+        }
+
         // Pre-check target class limits
         java.util.Map<Integer, Integer> targetClassAssignments = new java.util.HashMap<>();
         for (com.estudiez.backend.dto.ClassPromotionMapping mapping : request.getClassMappings()) {
