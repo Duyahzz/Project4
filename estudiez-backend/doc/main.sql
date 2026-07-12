@@ -1621,13 +1621,7 @@ GO
 USE eStudentDB;
 GO
 
--- Add current_grade column to Students table if it doesn't exist
-IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'Students' AND COLUMN_NAME = 'current_grade')
-BEGIN
-    ALTER TABLE Students ADD current_grade INT NULL;
-    PRINT N'âœ“ Added current_grade column to Students';
-END
-GO
+-- Add current_grade column to Students table if it doesn't exist (re-mapped to existing CurrentGrade column)
 
 -- Create StudentGradeProgressions table if it doesn't exist
 IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'StudentGradeProgressions')
@@ -1644,7 +1638,7 @@ BEGIN
         FOREIGN KEY (school_year_id) REFERENCES SchoolYears(SchoolYearId)
     );
     
-    CREATE INDEX idx_student_current_grade ON Students(current_grade);
+    CREATE INDEX idx_student_current_grade ON Students(CurrentGrade);
     CREATE INDEX idx_progression_student_id ON StudentGradeProgressions(student_id);
     CREATE INDEX idx_progression_school_year_id ON StudentGradeProgressions(school_year_id);
     
@@ -1658,7 +1652,7 @@ GO
 DECLARE @syId INT = (SELECT SchoolYearId FROM SchoolYears WHERE Name = N'2025-2026');
 
 -- Assign grades to existing students based on class enrollment
-UPDATE Students SET current_grade = 10 
+UPDATE Students SET CurrentGrade = 10 
 WHERE StudentId IN (
     SELECT DISTINCT s.StudentId FROM Students s
     INNER JOIN ClassEnrollments ce ON s.StudentId = ce.StudentId
@@ -1666,7 +1660,7 @@ WHERE StudentId IN (
     WHERE c.Name IN (N'10A1', N'10A2') AND c.SchoolYearId = @syId
 );
 
-UPDATE Students SET current_grade = 11
+UPDATE Students SET CurrentGrade = 11
 WHERE StudentId IN (
     SELECT DISTINCT s.StudentId FROM Students s
     INNER JOIN ClassEnrollments ce ON s.StudentId = ce.StudentId
@@ -1687,14 +1681,14 @@ SELECT
     s.StudentId,
     @syId,
     CASE 
-        WHEN s.current_grade = 10 THEN 9
-        WHEN s.current_grade = 11 THEN 10
+        WHEN s.CurrentGrade = 10 THEN 9
+        WHEN s.CurrentGrade = 11 THEN 10
     END,
-    s.current_grade,
+    s.CurrentGrade,
     N'YEAR_END_PROMOTION',
     DATEADD(YEAR, -1, GETDATE())
 FROM Students s
-WHERE s.current_grade IN (10, 11);
+WHERE s.CurrentGrade IN (10, 11);
 
 PRINT N'âœ“ Added grade progression history';
 GO

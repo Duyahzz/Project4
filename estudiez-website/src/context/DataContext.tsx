@@ -61,6 +61,8 @@ import {
   mapApiUsersToFrontend,
   SUBJECT_ID_MAP,
   SEMESTER_ID_MAP,
+  YEAR_MAP,
+  getSchoolYears,
   saveMarkApi,
   sendChatMessage,
   type ApiAssessment,
@@ -149,6 +151,7 @@ interface DataContextValue {
   updateChatGroup: (id: string, patch: Partial<Omit<ChatGroup, 'id'>>) => void
   deleteChatGroup: (id: string) => void
   addChatMessage: (message: Omit<ChatMessage, 'id'>) => void
+  refreshData: () => void
 }
 
 export const DataContext = createContext<DataContextValue | undefined>(undefined)
@@ -183,6 +186,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const studentIdByEmail        = useRef(new Map<string, string>())  // email → studentId UUID
   const teacherIdByEmail        = useRef(new Map<string, string>())  // email → teacherId UUID
 
+  const [refreshTrigger, setRefreshTrigger] = useState(0)
+  const refreshData = useCallback(() => {
+    setRefreshTrigger(prev => prev + 1)
+  }, [])
+
   useEffect(() => {
     let cancelled = false
 
@@ -194,7 +202,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       try {
         const [apiUsers, apiStudents, apiTeachers, apiClasses, apiAssessments,
                apiTimetable, apiResources, apiNewsPosts, apiNotifs, apiChatGroups, apiContacts,
-               apiParentLinks, apiParents, apiEnrollments, apiLessons] =
+               apiParentLinks, apiParents, apiEnrollments, apiLessons, apiSchoolYears] =
           await Promise.all([
             getUsers(),
             getStudents(),
@@ -211,9 +219,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
             getParents().catch(() => []),
             getClassEnrollments().catch(() => []),
             getAllLessons().catch(() => []),
+            getSchoolYears().catch(() => []),
           ])
 
         if (cancelled) return
+
+        // Update YEAR_MAP dynamically with fetched school years
+        apiSchoolYears.forEach(y => {
+          if (y.schoolYearId && y.name) {
+            YEAR_MAP[y.schoolYearId] = y.name
+          }
+        })
 
         // Build backend ID maps for use in mutations
         userIdByEmail.current.clear()
@@ -253,13 +269,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
           const email = u.email ?? `${u.username ?? u.userId}@estudiez.edu.vn`
           if (u.userId) emailByUserId.set(u.userId.toLowerCase(), email)
         })
-        // teacherId (Teacher PK) → fullName, needed for homeroomTeacher on SchoolClass
+        // teacherId (Teacher PK) → email and fullName lookups
         const nameByTeacherId = new Map<string, string>()
+        const emailByTeacherId = new Map<string, string>()
         apiTeachers.forEach(t => {
           const user = apiUsers.find(u => u.userId?.toLowerCase() === t.userId?.toLowerCase())
           const email = user ? (user.email ?? `${user.username ?? user.userId}@estudiez.edu.vn`) : ''
           if (email && t.teacherId) {
             teacherIdByEmail.current.set(email, t.teacherId.toLowerCase())
+            emailByTeacherId.set(t.teacherId.toLowerCase(), email)
           }
           if (t.teacherId && t.userId) {
             nameByTeacherId.set(t.teacherId.toLowerCase(), nameByUserId.get(t.userId.toLowerCase()) ?? '')
@@ -320,7 +338,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
           return u
         })
         setUsers(mappedUsers)
-        setClasses(apiClasses.map(c => mapApiClass(c, nameByTeacherId)))
+        setClasses(apiClasses.map(c => mapApiClass(c, emailByTeacherId)))
         setExams(apiAssessments.map(mapApiAssessmentToExam))
 
         if (apiTimetable.length > 0)
@@ -472,7 +490,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [refreshTrigger])
 
   // Poll chat messages from backend every 4 seconds to sync messages automatically on Web client
   useEffect(() => {
@@ -944,6 +962,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       updateChatGroup,
       deleteChatGroup,
       addChatMessage,
+      refreshData,
     }),
     [
       loading,
@@ -995,6 +1014,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       updateChatGroup,
       deleteChatGroup,
       addChatMessage,
+      refreshData,
     ],
   )
 
