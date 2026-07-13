@@ -14,11 +14,41 @@ import { classDetailPath } from '../classDetailPath'
 import { notificationDetailPath } from '../notificationDetailPath'
 import type { ChatGroupType, Grade } from '../../types'
 import { ManageGrades } from './ManageGrades'
+import { getSchoolYears } from '../../services/api'
 
 export function AdminDashboard() {
   const { users, classes } = useData()
   const navigate = useNavigate()
   const [activeView, setActiveView] = useState<'overview' | 'administration'>('overview')
+
+  const availableYears = useMemo(() => {
+    const years = Array.from(new Set(classes.map(c => c.year)))
+    if (years.length === 0) {
+      years.push(getDefaultAcademicYearLabel())
+    }
+    return years.sort((a, b) => b.localeCompare(a))
+  }, [classes])
+
+  const [currentYearName, setCurrentYearName] = useState<string>('')
+
+  const [selectedYear, setSelectedYear] = useState<string>(() => {
+    const current = getDefaultAcademicYearLabel()
+    return classes.some(c => c.year === current) ? current : (classes[0]?.year ?? current)
+  })
+
+  useEffect(() => {
+    getSchoolYears().then(years => {
+      const current = years.find(y => y.isCurrent)
+      if (current) {
+        setSelectedYear(current.name)
+        setCurrentYearName(current.name)
+      }
+    }).catch(console.error)
+  }, [])
+
+  const filteredClasses = useMemo(() => {
+    return classes.filter(c => c.year === selectedYear)
+  }, [classes, selectedYear])
 
   const students = useMemo(() => users.filter((u) => u.role === 'student'), [users])
 
@@ -26,18 +56,51 @@ export function AdminDashboard() {
     return new Map(classes.map((schoolClass) => [schoolClass.id, schoolClass.grade]))
   }, [classes])
 
+  const classYearMap = useMemo(() => {
+    return new Map(classes.map((schoolClass) => [schoolClass.id, schoolClass.year]))
+  }, [classes])
+
+  const getYearStart = (yearStr?: string) => {
+    if (!yearStr) return 0
+    const start = parseInt(yearStr.split('-')[0], 10)
+    return isNaN(start) ? 0 : start
+  }
+ 
   const counts = useMemo(() => {
-    const activeStudents = students.filter(s => s.status === 'ACTIVE')
-    const unassignedStudents = students.filter(s => s.status === 'PENDING_GRADE_ASSIGNMENT' || (!s.classId && s.status !== 'GRADUATED'))
+    const activeStudents = students.filter(s => 
+      s.status === 'ACTIVE' && 
+      s.classId && 
+      classYearMap.get(s.classId) === selectedYear
+    )
     const graduatedStudents = students.filter(s => s.status === 'GRADUATED')
+    
+    const selYearStart = getYearStart(selectedYear)
+    
+    const unassignedStudents = students.filter(s => {
+      if (s.status === 'GRADUATED') return false
+      
+      if (s.status === 'PENDING_GRADE_ASSIGNMENT') {
+        const adminYear = s.admissionDate ? getYearStart(s.admissionDate) : selYearStart
+        return adminYear === selYearStart
+      }
+      
+      if (!s.classId) return true
+      
+      const classYear = classYearMap.get(s.classId)
+      const classYearStart = getYearStart(classYear)
+      
+      if (classYearStart < selYearStart) return true
+      
+      return false
+    })
 
     const byGrade = { 10: 0, 11: 0, 12: 0 } as Record<Grade, number>
     for (const student of activeStudents) {
-      const grade = student.classId ? classGradeMap.get(student.classId) ?? student.grade : student.grade
+      const grade = classGradeMap.get(student.classId!) ?? student.grade
       if (grade) byGrade[grade] += 1
     }
 
-    const byClass = classes
+    const byClass = filteredClasses
       .map((schoolClass) => ({
         id: schoolClass.id,
         name: schoolClass.name,
@@ -53,13 +116,13 @@ export function AdminDashboard() {
       graduatedStudents: graduatedStudents.length,
       teachers: users.filter((u) => u.role === 'teacher').length,
       parents: users.filter((u) => u.role === 'parent').length,
-      classes: classes.length,
+      classes: filteredClasses.length,
       byGrade,
       byClass,
       unassignedList: unassignedStudents,
       graduatedList: graduatedStudents,
     }
-  }, [users, classes, students, classGradeMap])
+  }, [users, classes, students, classGradeMap, classYearMap, selectedYear, filteredClasses])
 
   return (
     <div className="space-y-4">
@@ -69,27 +132,44 @@ export function AdminDashboard() {
             <h2 className="text-lg font-semibold text-slate-900">Admin Workspace</h2>
             <p className="text-sm text-slate-500">Switch between dashboard analytics and administration tools.</p>
           </div>
-          <div className="inline-flex rounded-lg border border-slate-200 p-1 bg-slate-50">
-            <button
-              type="button"
-              onClick={() => setActiveView('overview')}
-              className={`px-3 py-1.5 text-sm font-medium rounded-md ${
-                activeView === 'overview' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600 hover:text-slate-800'
-              }`}
-            >
-              Dashboard Overview
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveView('administration')}
-              className={`px-3 py-1.5 text-sm font-medium rounded-md ${
-                activeView === 'administration'
-                  ? 'bg-white text-indigo-700 shadow-sm'
-                  : 'text-slate-600 hover:text-slate-800'
-              }`}
-            >
-              School Administration
-            </button>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-1.5 text-sm">
+              <span className="font-medium text-slate-600">School Year:</span>
+              <select
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(e.target.value)}
+                className="rounded-md border border-slate-200 bg-white px-2 py-1 text-slate-800 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium"
+              >
+                {availableYears.map(y => (
+                  <option key={y} value={y}>
+                    {y}{y === currentYearName ? ' (Current)' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+            
+            <div className="inline-flex rounded-lg border border-slate-200 p-1 bg-slate-50">
+              <button
+                type="button"
+                onClick={() => setActiveView('overview')}
+                className={`px-3 py-1.5 text-sm font-medium rounded-md ${
+                  activeView === 'overview' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600 hover:text-slate-800'
+                }`}
+              >
+                Dashboard Overview
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveView('administration')}
+                className={`px-3 py-1.5 text-sm font-medium rounded-md ${
+                  activeView === 'administration'
+                    ? 'bg-white text-indigo-700 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-800'
+                }`}
+              >
+                School Administration
+              </button>
+            </div>
           </div>
         </div>
       </Card>
@@ -216,14 +296,14 @@ export function AdminDashboard() {
         <Card title="School Administration">
           <Tabs
             tabs={[
-              { id: 'students', label: 'Students', content: <ManageStudents /> },
+              { id: 'students', label: 'Students', content: <ManageStudents year={selectedYear} /> },
               { id: 'grades', label: 'Grade Management', content: <ManageGrades /> },
               { id: 'teachers', label: 'Teachers', content: <ManageTeachers /> },
               { id: 'parents', label: 'Parents', content: <ManageParents /> },
-              { id: 'classes', label: 'Classes', content: <ManageClasses /> },
+              { id: 'classes', label: 'Classes', content: <ManageClasses year={selectedYear} /> },
               { id: 'news', label: 'News', content: <ManageNews /> },
               { id: 'notify', label: 'Notify Teachers', content: <NotifyTeachers /> },
-              { id: 'chat', label: 'Chat Groups', content: <ManageChatGroups /> },
+              { id: 'chat', label: 'Chat Groups', content: <ManageChatGroups year={selectedYear} /> },
             ]}
           />
         </Card>
@@ -261,11 +341,25 @@ const STUDENT_INITIAL: StudentFormState = {
   parentEmail: '',
 }
 
-function ManageStudents() {
+function ManageStudents({ year }: { year?: string }) {
   const { users, classes, addUser, updateUser } = useData()
   const { push } = useToast()
   const navigate = useNavigate()
-  const students = useMemo(() => users.filter((u) => u.role === 'student'), [users])
+
+  const filteredClasses = useMemo(() => {
+    return year ? classes.filter(c => c.year === year) : classes
+  }, [classes, year])
+
+  const students = useMemo(() => {
+    return users.filter((u) => {
+      if (u.role !== 'student') return false
+      if (!year) return true
+      if (u.status === 'GRADUATED') return false
+      if (!u.classId) return true
+      const classYear = classes.find(c => c.id === u.classId)?.year
+      return classYear === year
+    })
+  }, [users, classes, year])
 
   const classLabelMap = useMemo(() => {
     return new Map(classes.map((schoolClass) => [schoolClass.id, `${schoolClass.name} (Grade ${schoolClass.grade})`]))
@@ -339,7 +433,7 @@ function ManageStudents() {
   const [modalOpen, setModalOpen] = useState(false)
   const [form, setForm] = useState<StudentFormState>({
     ...STUDENT_INITIAL,
-    classId: classes[0]?.id ?? '',
+    classId: filteredClasses[0]?.id ?? '',
   })
   const [errors, setErrors] = useState<Partial<Record<keyof StudentFormState, string>>>({})
 
@@ -347,7 +441,7 @@ function ManageStudents() {
     setForm((prev) => ({ ...prev, [key]: value }))
 
   const resetForm = () => {
-    setForm({ ...STUDENT_INITIAL, classId: classes[0]?.id ?? '' })
+    setForm({ ...STUDENT_INITIAL, classId: filteredClasses[0]?.id ?? '' })
     setErrors({})
   }
 
@@ -475,7 +569,7 @@ function ManageStudents() {
             error={errors.classId}
           >
             <option value="">Select a class</option>
-            {classes.map((c) => (
+            {filteredClasses.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name} (Grade {c.grade})
               </option>
@@ -526,7 +620,7 @@ function ManageStudents() {
           >
             <option value="all">All classes</option>
             <option value="unassigned">Unassigned</option>
-            {classes
+            {filteredClasses
               .slice()
               .sort((a, b) => a.name.localeCompare(b.name))
               .map((c) => (
@@ -1084,12 +1178,17 @@ function ManageParents() {
   )
 }
 
-function ManageClasses() {
-  const { classes, users, addClass } = useData()
+function ManageClasses({ year }: { year?: string }) {
+  const { classes, users, addClass, schoolYears } = useData()
+  const filteredClasses = useMemo(() => {
+    return year ? classes.filter(c => c.year === year) : classes
+  }, [classes, year])
   const { push } = useToast()
   const navigate = useNavigate()
   const teachers = users.filter((u) => u.role === 'teacher')
   const currentAcademicYear = getDefaultAcademicYearLabel()
+  const currentActiveYear = useMemo(() => schoolYears.find(y => y.isCurrent)?.name, [schoolYears])
+  const isPastYear = year && currentActiveYear && year !== currentActiveYear
   const nextAcademicYear = useMemo(() => {
     const startYear = Number(currentAcademicYear.split('-')[0])
     return getAcademicYearLabel(startYear + 1)
@@ -1151,14 +1250,16 @@ function ManageClasses() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-slate-900">Classes ({classes.length})</h3>
-        <button
-          type="button"
-          onClick={openModal}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-md px-4 py-2 text-sm"
-        >
-          + Create Class
-        </button>
+        <h3 className="text-lg font-semibold text-slate-900">Classes ({filteredClasses.length})</h3>
+        {!isPastYear && (
+          <button
+            type="button"
+            onClick={openModal}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-md px-4 py-2 text-sm"
+          >
+            + Create Class
+          </button>
+        )}
       </div>
 
       <Modal
@@ -1249,11 +1350,11 @@ function ManageClasses() {
       </Modal>
 
       <Card>
-        {classes.length === 0 ? (
+        {filteredClasses.length === 0 ? (
           <p className="text-sm text-slate-500">No classes yet.</p>
         ) : (
           <ul className="space-y-2">
-            {classes.map((c) => {
+            {filteredClasses.map((c) => {
               const homeroom = users.find((u) => u.email === c.homeroomTeacher)
               return (
                 <li
@@ -1605,13 +1706,16 @@ const GROUP_TYPE_SUFFIX: Record<ChatGroupType, string> = {
   'parent-teacher': 'pt',
 }
 
-function ManageChatGroups() {
+function ManageChatGroups({ year }: { year?: string }) {
   const { classes, chatGroups, addChatGroup, users } = useData()
+  const filteredClasses = useMemo(() => {
+    return year ? classes.filter(c => c.year === year) : classes
+  }, [classes, year])
   const { push } = useToast()
 
   const [modalOpen, setModalOpen] = useState(false)
   const [form, setForm] = useState<ChatGroupFormState>({
-    classId: classes[0]?.id ?? '',
+    classId: filteredClasses[0]?.id ?? '',
     type: 'student-teacher',
   })
   const [createError, setCreateError] = useState('')
@@ -1639,7 +1743,7 @@ function ManageChatGroups() {
   }
 
   const openModal = () => {
-    setForm({ classId: classes[0]?.id ?? '', type: 'student-teacher' })
+    setForm({ classId: filteredClasses[0]?.id ?? '', type: 'student-teacher' })
     setCreateError('')
     setModalOpen(true)
   }
@@ -1714,7 +1818,7 @@ function ManageChatGroups() {
             hint={form.classId ? `${getClassGroupsCount(form.classId)}/2 groups created` : undefined}
           >
             <option value="">Select a class</option>
-            {classes.map((c) => (
+            {filteredClasses.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name} (Grade {c.grade}, {c.year})
               </option>

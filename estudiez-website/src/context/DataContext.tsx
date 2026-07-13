@@ -37,6 +37,7 @@ import {
   getContacts,
   getMarksByAssessment,
   getAllLessons,
+  getSemesters,
   getAllNews,
   getAllAttendance,
   getNotifications,
@@ -66,6 +67,7 @@ import {
   saveMarkApi,
   sendChatMessage,
   type ApiAssessment,
+  type ApiSchoolYear,
   type ApiAttendanceRecord,
   type ApiChatGroup,
   type ApiChatMessage,
@@ -79,6 +81,7 @@ interface DataContextValue {
   error: string | null
   users: User[]
   classes: SchoolClass[]
+  schoolYears: ApiSchoolYear[]
   subjects: Subject[]
   semesters: Semester[]
   exams: Exam[]
@@ -162,6 +165,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const [users, setUsers] = useState<User[]>([])
   const [classes, setClasses] = useState<SchoolClass[]>([])
+  const [schoolYears, setSchoolYears] = useState<ApiSchoolYear[]>([])
   const [subjects, setSubjects] = useState<Subject[]>([])
   const [semesters, setSemesters] = useState<Semester[]>([])
   const [exams, setExams] = useState<Exam[]>([])
@@ -202,7 +206,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       try {
         const [apiUsers, apiStudents, apiTeachers, apiClasses, apiAssessments,
                apiTimetable, apiResources, apiNewsPosts, apiNotifs, apiChatGroups, apiContacts,
-               apiParentLinks, apiParents, apiEnrollments, apiLessons, apiSchoolYears] =
+               apiParentLinks, apiParents, apiEnrollments, apiLessons, apiSchoolYears, apiSemesters] =
           await Promise.all([
             getUsers(),
             getStudents(),
@@ -220,6 +224,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
             getClassEnrollments().catch(() => []),
             getAllLessons().catch(() => []),
             getSchoolYears().catch(() => []),
+            getSemesters().catch(() => []),
           ])
 
         if (cancelled) return
@@ -230,6 +235,30 @@ export function DataProvider({ children }: { children: ReactNode }) {
             YEAR_MAP[y.schoolYearId] = y.name
           }
         })
+        setSchoolYears(apiSchoolYears)
+ 
+        // Update SEMESTER_ID_MAP and map semesters dynamically from DB
+        const mappedSemesters: Semester[] = []
+        apiSemesters.forEach(s => {
+          if (s.semesterId && s.schoolYearId) {
+            const yearName = YEAR_MAP[s.schoolYearId] ?? '2025-2026'
+            const startYear = yearName.split('-')[0]
+            const semNum = s.name.includes('2') ? '2' : '1'
+            const frontendSemId = `S${semNum}-${startYear}`
+            SEMESTER_ID_MAP[s.semesterId] = frontendSemId
+ 
+            mappedSemesters.push({
+              id: frontendSemId,
+              name: s.name,
+              year: yearName,
+              startDate: s.startDate,
+              endDate: s.endDate,
+            })
+          }
+        })
+        if (mappedSemesters.length > 0) {
+          setSemesters(mappedSemesters)
+        }
 
         // Build backend ID maps for use in mutations
         userIdByEmail.current.clear()
@@ -917,6 +946,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       error,
       users,
       classes,
+      schoolYears,
       subjects,
       semesters,
       exams,
@@ -969,6 +999,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       error,
       users,
       classes,
+      schoolYears,
       subjects,
       semesters,
       exams,

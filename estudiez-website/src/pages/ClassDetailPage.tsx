@@ -32,15 +32,17 @@ export function ClassDetailPage() {
   const { classId: classIdParam } = useParams<{ classId: string }>()
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
-  const { classes, users, scores, progress, timetable, deleteClass, updateUser } = useData()
+  const { classes, users, scores, progress, timetable, deleteClass, updateUser, schoolYears } = useData()
   const { push } = useToast()
   const [editing, setEditing] = useState(false)
   const [provisionOpen, setProvisionOpen] = useState(false)
   const [provisionSearch, setProvisionSearch] = useState('')
   const [provisioning, setProvisioning] = useState<string | null>(null) // studentId being processed
-
+ 
   const classId = classIdParam ? decodeURIComponent(classIdParam) : ''
   const schoolClass = classes.find((c) => c.id === classId)
+  const currentActiveYear = useMemo(() => schoolYears.find(y => y.isCurrent)?.name, [schoolYears])
+  const isPastYear = schoolClass && currentActiveYear && schoolClass.year !== currentActiveYear
   const subject = searchParams.get('subject') ?? ''
 
   const students = useMemo(
@@ -86,6 +88,10 @@ export function ClassDetailPage() {
       .map(([name, teacherSet]) => ({ subject: name, teachers: Array.from(teacherSet) }))
       .sort((a, b) => a.subject.localeCompare(b.subject))
   }, [timetable, classId])
+ 
+  const filteredClassSubjects = useMemo(() => {
+    return subject ? classSubjects.filter((cs) => cs.subject === subject) : classSubjects
+  }, [classSubjects, subject])
 
   const teachers = useMemo(() => users.filter((u) => u.role === 'teacher'), [users])
   const homeroom = users.find((u) => u.email === schoolClass?.homeroomTeacher)
@@ -203,22 +209,24 @@ export function ClassDetailPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => setEditing((v) => !v)}
-              className="border border-slate-300 text-slate-700 hover:bg-slate-100 text-sm font-semibold rounded-md px-3 py-1.5 transition-colors"
-            >
-              {editing ? 'Close Edit' : '✏️ Edit Class'}
-            </button>
-            <button
-              type="button"
-              onClick={handleDelete}
-              className="bg-rose-600 hover:bg-rose-700 text-white text-sm font-semibold rounded-md px-3 py-1.5 transition-colors"
-            >
-              Delete
-            </button>
-          </div>
+          {!isPastYear && (
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setEditing((v) => !v)}
+                className="border border-slate-300 text-slate-700 hover:bg-slate-100 text-sm font-semibold rounded-md px-3 py-1.5 transition-colors"
+              >
+                {editing ? 'Close Edit' : '✏️ Edit Class'}
+              </button>
+              <button
+                type="button"
+                onClick={handleDelete}
+                className="bg-rose-600 hover:bg-rose-700 text-white text-sm font-semibold rounded-md px-3 py-1.5 transition-colors"
+              >
+                Delete
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -245,17 +253,19 @@ export function ClassDetailPage() {
               {subject ? `Showing marks for ${subject}.` : 'All enrolled students.'}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => { setProvisionOpen((v) => !v); setProvisionSearch('') }}
-            disabled={enrolled >= limit && !provisionOpen}
-            className={`inline-flex items-center gap-1.5 text-sm font-semibold rounded-md px-3 py-1.5 transition-colors ${enrolled >= limit && !provisionOpen
-                ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                : 'bg-indigo-600 hover:bg-indigo-700 text-white'
-              }`}
-          >
-            {provisionOpen ? '✕ Close' : '+ Add Student'}
-          </button>
+          {!isPastYear && (
+            <button
+              type="button"
+              onClick={() => { setProvisionOpen((v) => !v); setProvisionSearch('') }}
+              disabled={enrolled >= limit && !provisionOpen}
+              className={`inline-flex items-center gap-1.5 text-sm font-semibold rounded-md px-3 py-1.5 transition-colors ${enrolled >= limit && !provisionOpen
+                  ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                  : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                }`}
+            >
+              {provisionOpen ? '✕ Close' : '+ Add Student'}
+            </button>
+          )}
         </div>
 
         {/* Provision panel */}
@@ -288,7 +298,6 @@ export function ClassDetailPage() {
                   <thead className="bg-indigo-50 sticky top-0">
                     <tr>
                       <th className="px-4 py-2 text-left font-semibold text-indigo-700">Name</th>
-                      <th className="px-4 py-2 text-left font-semibold text-indigo-700">Email</th>
                       <th className="px-4 py-2 text-left font-semibold text-indigo-700">Current Class</th>
                       <th className="px-4 py-2 text-left font-semibold text-indigo-700">Status</th>
                       <th className="px-4 py-2" />
@@ -298,7 +307,6 @@ export function ClassDetailPage() {
                     {filteredCandidates.map((u) => (
                       <tr key={u.email} className="hover:bg-indigo-50/50 transition-colors">
                         <td className="px-4 py-2 font-medium text-slate-800">{u.fullName}</td>
-                        <td className="px-4 py-2 text-slate-500">{u.email}</td>
                         <td className="px-4 py-2">
                           {u.classId ? (
                             <span className="inline-flex items-center rounded-full bg-amber-100 text-amber-700 px-2 py-0.5 text-xs font-semibold">
@@ -334,7 +342,35 @@ export function ClassDetailPage() {
             )}
           </div>
         )}
-
+ 
+        {/* Subject filter tabs directly above the student table */}
+        {classSubjects.length > 0 && (
+          <div className="bg-slate-50/50 border-b border-slate-100 px-5 py-3 flex flex-wrap items-center gap-2">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-400 mr-2">Subject Filter:</span>
+            <Link
+              to={classDetailPath(classId)}
+              className={`rounded-full px-3 py-1 text-xs font-bold transition-all ${subject === '' 
+                ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-100' 
+                : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-800'
+              }`}
+            >
+              All Subjects
+            </Link>
+            {classSubjects.map((s) => (
+              <Link
+                key={s.subject}
+                to={classDetailPath(classId, s.subject)}
+                className={`rounded-full px-3 py-1 text-xs font-bold transition-all ${subject === s.subject 
+                  ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-100' 
+                  : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-800'
+                }`}
+              >
+                {s.subject}
+              </Link>
+            ))}
+          </div>
+        )}
+ 
         {/* Enrolled students table */}
         {students.length === 0 ? (
           <div className="px-5 py-8 text-center">
@@ -354,7 +390,6 @@ export function ClassDetailPage() {
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide w-10">#</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Student</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Email</th>
                   {subject && (
                     <>
                       <th className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">{subject} Marks</th>
@@ -374,7 +409,7 @@ export function ClassDetailPage() {
                     subject={subject}
                     scores={scores}
                     provisioning={provisioning}
-                    onRemove={handleRemove}
+                    onRemove={isPastYear ? undefined : handleRemove}
                   />
                 ))}
               </tbody>
@@ -384,33 +419,14 @@ export function ClassDetailPage() {
       </div>
 
       {classSubjects.length > 0 && (
-        <Card title="Subjects & Teachers" description="Select a subject to review marks for this class.">
-          <div className="flex flex-wrap gap-2 mb-3">
-            <Link
-              to={classDetailPath(classId)}
-              className={`rounded-full px-3 py-1 text-sm font-semibold ${subject === '' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                }`}
-            >
-              All
-            </Link>
-            {classSubjects.map((s) => (
-              <Link
-                key={s.subject}
-                to={classDetailPath(classId, s.subject)}
-                className={`rounded-full px-3 py-1 text-sm font-semibold ${subject === s.subject ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                  }`}
-              >
-                {s.subject}
-              </Link>
-            ))}
-          </div>
+        <Card title="Subjects & Teachers" description="Assigned subjects and teaching staff for this class.">
           <ul className="divide-y divide-slate-100">
-            {classSubjects.map((s) => (
+            {filteredClassSubjects.map((s) => (
               <li key={s.subject} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
                 <span className="font-semibold text-slate-900">{s.subject}</span>
                 <span className="text-slate-600">
                   {s.teachers.length === 0 ? (
-                    <span className="text-slate-400">Unassigned</span>
+                     <span className="text-slate-400">Unassigned</span>
                   ) : (
                     s.teachers.map((name, i) => {
                       const teacher = users.find((u) => u.fullName === name)
@@ -460,7 +476,7 @@ function StudentRow({
   subject: string
   scores: ScoreDetail[]
   provisioning: string | null
-  onRemove: (s: User) => void
+  onRemove?: (s: User) => void
 }) {
   const studentScores = subject
     ? scores.filter((s) => s.studentEmail === student.email && s.classId === classId && s.subject === subject)
@@ -475,7 +491,6 @@ function StudentRow({
           {student.fullName}
         </Link>
       </td>
-      <td className="px-4 py-3 text-slate-500">{student.email}</td>
       {subject && (
         <>
           <td className="px-4 py-3">
@@ -507,14 +522,16 @@ function StudentRow({
         </>
       )}
       <td className="px-4 py-3 text-right">
-        <button
-          type="button"
-          disabled={!!provisioning}
-          onClick={() => onRemove(student)}
-          className="text-xs font-semibold text-rose-500 hover:text-rose-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-        >
-          {provisioning === student.userId ? 'Removing…' : 'Remove'}
-        </button>
+        {onRemove && (
+          <button
+            type="button"
+            disabled={!!provisioning}
+            onClick={() => onRemove(student)}
+            className="text-xs font-semibold text-rose-500 hover:text-rose-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            {provisioning === student.userId ? 'Removing…' : 'Remove'}
+          </button>
+        )}
       </td>
     </tr>
   )
