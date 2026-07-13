@@ -16,7 +16,7 @@ export const SEED_SUBJECTS: Subject[] = [
   { id: 'BIO',  name: 'Biology'            },
   { id: 'HIS',  name: 'History'            },
   { id: 'GEO',  name: 'Geography'          },
-  { id: 'CS',   name: 'Computer Science'   },
+  { id: 'CS',   name: 'Informatics'        },
   { id: 'PE',   name: 'Physical Education' },
 ]
 

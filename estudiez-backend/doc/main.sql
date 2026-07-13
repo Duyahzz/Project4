@@ -571,7 +571,7 @@ INSERT INTO Subjects (Code, Name, Description, IsActive) VALUES
     (N'BIO',  N'Biology',            N'Cell biology, Ecology, Genetics',          1),
     (N'HIS',  N'History',            N'Vietnamese and world history',             1),
     (N'GEO',  N'Geography',          N'Physical and human geography',             1),
-    (N'CS',   N'Computer Science',   N'Programming, Algorithms, IT foundations', 1),
+    (N'CS',   N'Informatics',        N'Programming, Algorithms, IT foundations', 1),
     (N'PE',   N'Physical Education', N'Sports, Health, Fitness',                 1);
 DECLARE @subMath INT = (SELECT SubjectId FROM Subjects WHERE Code = N'MATH');
 DECLARE @subLit  INT = (SELECT SubjectId FROM Subjects WHERE Code = N'LIT');
@@ -698,7 +698,7 @@ INSERT INTO Teachers (TeacherId, UserId, EmployeeCode, SubjectId, Qualification)
 (@tId06,@uT06,N'TCH006',@subBio, N'BSc Biology'),
 (@tId07,@uT07,N'TCH007',@subHis, N'BA History'),
 (@tId08,@uT08,N'TCH008',@subGeo, N'BSc Geography'),
-(@tId09,@uT09,N'TCH009',@subCs,  N'BSc Computer Science'),
+(@tId09,@uT09,N'TCH009',@subCs,  N'BSc Informatics'),
 (@tId10,@uT10,N'TCH010',@subPe,  N'BSc Sports Science');
 
 -- â”€â”€ 8. STUDENTS (16) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -1985,20 +1985,37 @@ BEGIN
 
     SELECT @parentId = ParentId FROM Parents WHERE UserId = @parentUserId;
 
-    IF NOT EXISTS (SELECT 1 FROM Users WHERE Username = @studentUsername)
-        INSERT INTO Users (UserId, RoleId, Username, PasswordHash, FullName, Email, Phone, IsActive)
-        VALUES (NEWID(), @rStudent, @studentUsername, HASHBYTES('SHA2_256', N'Student@123'),
-                @studentFullName, @studentEmail,
-                N'08' + RIGHT('00000000' + CAST(900000000 + @i AS VARCHAR(10)), 8), 1);
-
-    SELECT @studentUserId = UserId FROM Users WHERE Username = @studentUsername;
-
-    UPDATE Users
-    SET FullName = @studentFullName,
-        Email = @studentEmail,
-        Phone = N'08' + RIGHT('00000000' + CAST(900000000 + @i AS VARCHAR(10)), 8),
-        IsActive = 1
-    WHERE UserId = @studentUserId;
+    SET @studentUserId = NULL;
+    SELECT @studentUserId = UserId FROM Students WHERE StudentCode = @studentCode;
+ 
+    IF @studentUserId IS NOT NULL
+    BEGIN
+        UPDATE Users
+        SET Username = @studentUsername,
+            PasswordHash = HASHBYTES('SHA2_256', N'Student@123'),
+            FullName = @studentFullName,
+            Email = @studentEmail,
+            Phone = N'08' + RIGHT('00000000' + CAST(900000000 + @i AS VARCHAR(10)), 8),
+            IsActive = 1
+        WHERE UserId = @studentUserId;
+    END
+    ELSE
+    BEGIN
+        IF NOT EXISTS (SELECT 1 FROM Users WHERE Username = @studentUsername)
+            INSERT INTO Users (UserId, RoleId, Username, PasswordHash, FullName, Email, Phone, IsActive)
+            VALUES (NEWID(), @rStudent, @studentUsername, HASHBYTES('SHA2_256', N'Student@123'),
+                    @studentFullName, @studentEmail,
+                    N'08' + RIGHT('00000000' + CAST(900000000 + @i AS VARCHAR(10)), 8), 1);
+ 
+        SELECT @studentUserId = UserId FROM Users WHERE Username = @studentUsername;
+ 
+        UPDATE Users
+        SET FullName = @studentFullName,
+            Email = @studentEmail,
+            Phone = N'08' + RIGHT('00000000' + CAST(900000000 + @i AS VARCHAR(10)), 8),
+            IsActive = 1
+        WHERE UserId = @studentUserId;
+    END
 
     IF NOT EXISTS (SELECT 1 FROM Students WHERE StudentCode = @studentCode)
         INSERT INTO Students (StudentId, UserId, StudentCode, DateOfBirth, Gender, Address, AdmissionDate, Status, CurrentGrade, CreatedAt)
@@ -2150,7 +2167,158 @@ WHERE TRY_CONVERT(INT, SUBSTRING(s.StudentCode, 4, 3)) BETWEEN 161 AND 170
     AND s.Status = N'ACTIVE';
 
 PRINT N'✓ Linked 110 active students to classes (10A1=20, 10A2=20, others=10)';
-
+ 
+-- ──────────────────────────────────────────────────────────────────────────────
+--  SECTION 20.5 – RICH DATA GENERATION: TEACHERS, TIMETABLE, EXAMS & MARKS
+-- ──────────────────────────────────────────────────────────────────────────────
+PRINT N'Populating rich sync data for teachers, timetable, exams, and marks...';
+ 
+-- 1. Ensure TeacherClassAssignments exists for ALL classes and subjects in the school year
+INSERT INTO TeacherClassAssignments (TeacherId, ClassId, SubjectId, SchoolYearId)
+SELECT t.TeacherId, c.ClassId, t.SubjectId, c.SchoolYearId
+FROM Teachers t
+CROSS JOIN Classes c
+WHERE c.SchoolYearId = @syYear
+  AND NOT EXISTS (
+      SELECT 1 FROM TeacherClassAssignments tca
+      WHERE tca.TeacherId = t.TeacherId
+        AND tca.ClassId = c.ClassId
+        AND tca.SubjectId = t.SubjectId
+        AND tca.SchoolYearId = c.SchoolYearId
+  );
+ 
+-- 2. Populate TimetableSlots for all classes and both semesters of the school year
+INSERT INTO TimetableSlots (ClassId, SubjectId, TeacherId, SemesterId, DayOfWeek, PeriodNo, StartTime, EndTime, Room, EffectiveFrom)
+SELECT 
+    c.ClassId,
+    src.SubjectId,
+    src.TeacherId,
+    sem.SemesterId,
+    src.DayOfWeek,
+    src.PeriodNo,
+    src.StartTime,
+    src.EndTime,
+    c.Room,
+    COALESCE(src.EffectiveFrom, '2025-09-05')
+FROM Classes c
+CROSS JOIN Semesters sem
+CROSS JOIN (
+    -- Baseline slots from class 10A1
+    SELECT ts.*
+    FROM TimetableSlots ts
+    INNER JOIN Classes c10 ON ts.ClassId = c10.ClassId
+    WHERE c10.Name = N'10A1' AND c10.SchoolYearId = @syYear
+) src
+WHERE c.SchoolYearId = sem.SchoolYearId
+  AND c.SchoolYearId = @syYear
+  AND NOT EXISTS (
+      SELECT 1 FROM TimetableSlots target_ts
+      WHERE target_ts.ClassId = c.ClassId
+        AND target_ts.SemesterId = sem.SemesterId
+        AND target_ts.DayOfWeek = src.DayOfWeek
+        AND target_ts.PeriodNo = src.PeriodNo
+  );
+ 
+-- 3. Delete existing assessments/marks for the year first to prevent duplication
+DELETE sm FROM StudentMarks sm
+INNER JOIN Assessments a ON sm.AssessmentId = a.AssessmentId
+INNER JOIN Classes c ON a.ClassId = c.ClassId
+WHERE c.SchoolYearId = @syYear;
+ 
+DELETE a FROM Assessments a
+INNER JOIN Classes c ON a.ClassId = c.ClassId
+WHERE c.SchoolYearId = @syYear;
+ 
+-- 4. Generate rich Quiz, Midterm, and Final exams and marks for all students, classes and subjects
+DECLARE @loopClassId INT;
+DECLARE @loopSubjectId INT;
+DECLARE @loopTeacherId UNIQUEIDENTIFIER;
+DECLARE @loopSemesterId INT;
+DECLARE @loopSemStartDate DATE;
+ 
+DECLARE db_cursor CURSOR LOCAL FAST_FORWARD FOR
+SELECT 
+    tca.ClassId, 
+    tca.SubjectId, 
+    MIN(tca.TeacherId) AS TeacherId,
+    sem.SemesterId, 
+    sem.StartDate
+FROM TeacherClassAssignments tca
+CROSS JOIN Semesters sem
+WHERE tca.SchoolYearId = sem.SchoolYearId
+  AND tca.SchoolYearId = @syYear
+GROUP BY tca.ClassId, tca.SubjectId, sem.SemesterId, sem.StartDate;
+ 
+OPEN db_cursor;
+FETCH NEXT FROM db_cursor INTO @loopClassId, @loopSubjectId, @loopTeacherId, @loopSemesterId, @loopSemStartDate;
+ 
+WHILE @@FETCH_STATUS = 0
+BEGIN
+    -- Quiz
+    INSERT INTO Assessments(ClassId, SubjectId, TeacherId, SemesterId, AssessmentTypeId, Title, AssessmentDate, MaxScore, Weight, Status)
+    VALUES(@loopClassId, @loopSubjectId, @loopTeacherId, @loopSemesterId, 
+           (SELECT TOP 1 AssessmentTypeId FROM AssessmentTypes WHERE Code = N'QUIZ'),
+           (SELECT Name FROM Subjects WHERE SubjectId = @loopSubjectId) + N' Quiz',
+           DATEADD(day, 30, @loopSemStartDate), 10, 0.10, N'COMPLETED');
+    
+    DECLARE @quizId INT = SCOPE_IDENTITY();
+    
+    INSERT INTO StudentMarks(AssessmentId, StudentId, Score, TeacherComment, GradedBy)
+    SELECT 
+        @quizId, 
+        ce.StudentId,
+        5.0 + (ABS(CHECKSUM(NEWID())) % 51) * 0.1,
+        N'Good effort.',
+        @loopTeacherId
+    FROM ClassEnrollments ce
+    WHERE ce.ClassId = @loopClassId AND ce.Status = N'ACTIVE';
+ 
+    -- Midterm
+    INSERT INTO Assessments(ClassId, SubjectId, TeacherId, SemesterId, AssessmentTypeId, Title, AssessmentDate, MaxScore, Weight, Status)
+    VALUES(@loopClassId, @loopSubjectId, @loopTeacherId, @loopSemesterId, 
+           (SELECT TOP 1 AssessmentTypeId FROM AssessmentTypes WHERE Code = N'MIDTERM'),
+           (SELECT Name FROM Subjects WHERE SubjectId = @loopSubjectId) + N' Midterm',
+           DATEADD(day, 75, @loopSemStartDate), 10, 0.30, N'COMPLETED');
+           
+    DECLARE @midtermId INT = SCOPE_IDENTITY();
+    
+    INSERT INTO StudentMarks(AssessmentId, StudentId, Score, TeacherComment, GradedBy)
+    SELECT 
+        @midtermId, 
+        ce.StudentId,
+        5.0 + (ABS(CHECKSUM(NEWID())) % 51) * 0.1,
+        N'Completed exam.',
+        @loopTeacherId
+    FROM ClassEnrollments ce
+    WHERE ce.ClassId = @loopClassId AND ce.Status = N'ACTIVE';
+ 
+    -- Final
+    INSERT INTO Assessments(ClassId, SubjectId, TeacherId, SemesterId, AssessmentTypeId, Title, AssessmentDate, MaxScore, Weight, Status)
+    VALUES(@loopClassId, @loopSubjectId, @loopTeacherId, @loopSemesterId, 
+           (SELECT TOP 1 AssessmentTypeId FROM AssessmentTypes WHERE Code = N'FINAL'),
+           (SELECT Name FROM Subjects WHERE SubjectId = @loopSubjectId) + N' Final Exam',
+           DATEADD(day, 120, @loopSemStartDate), 10, 0.60, N'COMPLETED');
+           
+    DECLARE @finalId INT = SCOPE_IDENTITY();
+    
+    INSERT INTO StudentMarks(AssessmentId, StudentId, Score, TeacherComment, GradedBy)
+    SELECT 
+        @finalId, 
+        ce.StudentId,
+        5.0 + (ABS(CHECKSUM(NEWID())) % 51) * 0.1,
+        N'Well done.',
+        @loopTeacherId
+    FROM ClassEnrollments ce
+    WHERE ce.ClassId = @loopClassId AND ce.Status = N'ACTIVE';
+ 
+    FETCH NEXT FROM db_cursor INTO @loopClassId, @loopSubjectId, @loopTeacherId, @loopSemesterId, @loopSemStartDate;
+END;
+ 
+CLOSE db_cursor;
+DEALLOCATE db_cursor;
+ 
+PRINT N'✓ Generated rich synced assessments, timetables, and teacher assignments!';
+ 
 -- Hard assertions for deterministic seed quality
 IF EXISTS (
     SELECT c.Name

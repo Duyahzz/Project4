@@ -3,7 +3,7 @@ import { Card } from '../../components/Card'
 import { FormField } from '../../components/FormField'
 import { useData } from '../../hooks/useData'
 import { useToast } from '../../hooks/useToast'
-import { batchPromoteStudents, batchAssignGradeAndClass, updateApiClass, getSchoolYears, findOrCreateSchoolYear, createApiClass, getClasses } from '../../services/api'
+import { batchPromoteStudents, batchAssignGradeAndClass, updateApiClass, getSchoolYears, findOrCreateSchoolYear, createApiClass, getClasses, setSchoolYearCurrent, cloneTimetableYear } from '../../services/api'
 import type { ApiSchoolYear } from '../../services/api'
 
 const AVAILABLE_ROOMS = [
@@ -345,7 +345,18 @@ export function ManageGrades() {
       if (createdCount > 0) {
         push('success', `Initialized ${createdCount} classes for ${selectedTargetYear} with 20 student limit default.`)
       }
-
+ 
+      // Clone weekly timetables and teaching assignments from corresponding classes
+      try {
+        const clonedSlotsCount = await cloneTimetableYear(selectedSourceYearId, targetYearId)
+        if (clonedSlotsCount > 0) {
+          push('success', `Copied ${clonedSlotsCount} weekly timetable schedules and teaching assignments from corresponding ${selectedSourceYear} classes.`)
+        }
+      } catch (cloneErr: any) {
+        console.error('Failed to clone weekly timetables:', cloneErr)
+        push('info', 'Could not copy timetables automatically from the previous year.')
+      }
+ 
       setCurrentStep(2)
     } catch (err: any) {
       push('error', err?.message || 'Failed to initialize rollover.')
@@ -369,7 +380,7 @@ export function ManageGrades() {
       const targetYearRecord = await findOrCreateSchoolYear(selectedTargetYear)
       setSelectedTargetYearId(targetYearRecord.schoolYearId)
 
-      const studentIds = candidates.map(s => s.userId || '').filter(Boolean)
+      const studentIds = candidates.map(s => s.studentId || s.userId || '').filter(Boolean)
       const mappings = Array.from(new Set(candidates.map(s => s.classId))).map(cid => ({
         sourceClassId: Number(cid),
         targetClassId: null
@@ -421,7 +432,7 @@ export function ManageGrades() {
             throw new Error(`Target class ${targetClass.name} must have a homeroom teacher and room assigned.`);
           }
           const teacherUser = users.find(u => u.email === config.homeroomTeacher)
-          const teacherId = teacherUser?.userId
+          const teacherId = teacherUser?.teacherId
           
           await updateApiClass(Number(cid), {
             name: targetClass.name,
@@ -445,7 +456,7 @@ export function ManageGrades() {
         targetClassId: Number(targetId)
       }))
 
-      const studentIds = candidates.map(s => s.userId || '').filter(Boolean)
+      const studentIds = candidates.map(s => s.studentId || s.userId || '').filter(Boolean)
 
       await batchPromoteStudents({
         sourceSchoolYearId: selectedSourceYearId,
@@ -494,7 +505,7 @@ export function ManageGrades() {
             throw new Error(`Target class ${targetClass.name} must have a homeroom teacher and room assigned.`);
           }
           const teacherUser = users.find(u => u.email === config.homeroomTeacher)
-          const teacherId = teacherUser?.userId
+          const teacherId = teacherUser?.teacherId
           
           await updateApiClass(Number(cid), {
             name: targetClass.name,
@@ -518,7 +529,7 @@ export function ManageGrades() {
         targetClassId: Number(targetId)
       }))
 
-      const studentIds = candidates.map(s => s.userId || '').filter(Boolean)
+      const studentIds = candidates.map(s => s.studentId || s.userId || '').filter(Boolean)
 
       await batchPromoteStudents({
         sourceSchoolYearId: selectedSourceYearId,
@@ -574,7 +585,7 @@ export function ManageGrades() {
             throw new Error(`Target class ${targetClass.name} must have a homeroom teacher and room assigned.`);
           }
           const teacherUser = users.find(u => u.email === config.homeroomTeacher)
-          const teacherId = teacherUser?.userId
+          const teacherId = teacherUser?.teacherId
           
           await updateApiClass(Number(cid), {
             name: targetClass.name,
@@ -600,7 +611,7 @@ export function ManageGrades() {
           if (!studentsByTargetClass.has(targetId)) {
             studentsByTargetClass.set(targetId, [])
           }
-          studentsByTargetClass.get(targetId)!.push(s.userId || s.email)
+          studentsByTargetClass.get(targetId)!.push(s.studentId || s.userId || s.email)
         }
       })
 
@@ -625,7 +636,13 @@ export function ManageGrades() {
         enrolledNewHiresCount: candidates.length,
         targetYear: selectedTargetYear
       }))
-      push('success', `Enrolled ${candidates.length} new hire student(s) successfully.`)
+ 
+      if (selectedTargetYearId) {
+        await setSchoolYearCurrent(selectedTargetYearId)
+      }
+      await refreshData()
+ 
+      push('success', `Enrolled ${candidates.length} new hire student(s) successfully and set ${selectedTargetYear} as the current school year.`)
       setCurrentStep(6)
     } catch (err: any) {
       push('error', err?.message || 'Failed to enroll new hires.')
@@ -887,10 +904,12 @@ export function ManageGrades() {
                   const availableTeachers = getAvailableTeachers(targetClassId)
                   const matchingClass = classes.find(c => c.id === targetClassId)
                   const allocatedCount = mappedCountsG11[targetClassId] ?? 0
+                  const currentClassCount = g11Candidates.filter(s => s.classId === sc.id).length
+                  const isLimitInvalid = targetClassId && config.studentLimit < currentClassCount
                   const isOver = allocatedCount > config.studentLimit
                   
                   return (
-                    <div key={sc.id} className={`border rounded-lg p-4 bg-slate-50/50 space-y-3 shadow-xs ${isOver ? 'border-rose-300 bg-rose-50/20' : 'border-slate-200'}`}>
+                    <div key={sc.id} className={`border rounded-lg p-4 bg-slate-50/50 space-y-3 shadow-xs ${isOver || isLimitInvalid ? 'border-rose-300 bg-rose-50/20' : 'border-slate-200'}`}>
                       <div className="flex justify-between items-center border-b border-slate-100 pb-2">
                         <h4 className="font-bold text-slate-800 text-sm">Source Class: {sc.name}</h4>
                         <div className="text-xs font-semibold">
@@ -981,6 +1000,15 @@ export function ManageGrades() {
                           }}
                         />
                       </div>
+
+                      {targetClassId && config.studentLimit < currentClassCount && (
+                        <div className="bg-rose-50 border border-rose-200 text-rose-700 px-3 py-2 rounded-md text-xs font-semibold flex items-center gap-1.5 mt-1.5">
+                          <span>⚠️</span>
+                          <span>
+                            Warning: Student limit ({config.studentLimit}) is less than current class size ({currentClassCount} students).
+                          </span>
+                        </div>
+                      )}
                     </div>
                   )
                 })
@@ -1111,10 +1139,12 @@ export function ManageGrades() {
                   const availableTeachers = getAvailableTeachers(targetClassId)
                   const matchingClass = classes.find(c => c.id === targetClassId)
                   const allocatedCount = mappedCountsG10[targetClassId] ?? 0
+                  const currentClassCount = g10Candidates.filter(s => s.classId === sc.id).length
+                  const isLimitInvalid = targetClassId && config.studentLimit < currentClassCount
                   const isOver = allocatedCount > config.studentLimit
                   
                   return (
-                    <div key={sc.id} className={`border rounded-lg p-4 bg-slate-50/50 space-y-3 shadow-xs ${isOver ? 'border-rose-300 bg-rose-50/20' : 'border-slate-200'}`}>
+                    <div key={sc.id} className={`border rounded-lg p-4 bg-slate-50/50 space-y-3 shadow-xs ${isOver || isLimitInvalid ? 'border-rose-300 bg-rose-50/20' : 'border-slate-200'}`}>
                       <div className="flex justify-between items-center border-b border-slate-100 pb-2">
                         <h4 className="font-bold text-slate-800 text-sm">Source Class: {sc.name}</h4>
                         <div className="text-xs font-semibold">
@@ -1205,6 +1235,15 @@ export function ManageGrades() {
                           }}
                         />
                       </div>
+
+                      {targetClassId && config.studentLimit < currentClassCount && (
+                        <div className="bg-rose-50 border border-rose-200 text-rose-700 px-3 py-2 rounded-md text-xs font-semibold flex items-center gap-1.5 mt-1.5">
+                          <span>⚠️</span>
+                          <span>
+                            Warning: Student limit ({config.studentLimit}) is less than current class size ({currentClassCount} students).
+                          </span>
+                        </div>
+                      )}
                     </div>
                   )
                 })
