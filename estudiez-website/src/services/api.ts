@@ -65,7 +65,12 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(errorMsg)
   }
   const text = await res.text()
-  return text ? (JSON.parse(text) as T) : (undefined as unknown as T)
+  if (!text) return undefined as unknown as T
+  try {
+    return JSON.parse(text) as T
+  } catch (e) {
+    return text as unknown as T
+  }
 }
 
 const apiGet   = <T>(path: string)               => apiFetch<T>(path)
