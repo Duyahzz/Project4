@@ -94,7 +94,7 @@ export function AdminDashboard() {
       return false
     })
 
-    const byGrade = { 10: 0, 11: 0, 12: 0 } as Record<Grade, number>
+    const byGrade = { 9: 0, 10: 0, 11: 0, 12: 0 } as Record<Grade, number>
     for (const student of activeStudents) {
       const grade = classGradeMap.get(student.classId!) ?? student.grade
       if (grade) byGrade[grade] += 1
@@ -188,7 +188,7 @@ export function AdminDashboard() {
             <div className="space-y-4">
               <Card title="Active Students by Grade">
                 <ul className="space-y-2">
-                  {[10, 11, 12].map((grade) => (
+                  {[9, 10, 11, 12].map((grade) => (
                     <li
                       key={grade}
                       className="flex items-center justify-between rounded-lg border border-slate-200 px-3 py-2"
@@ -327,6 +327,7 @@ interface StudentFormState {
   address: string
   phone: string
   age: string
+  grade: string
   classId: string
   parentEmail: string
 }
@@ -337,6 +338,7 @@ const STUDENT_INITIAL: StudentFormState = {
   address: '',
   phone: '',
   age: '',
+  grade: '10',
   classId: '',
   parentEmail: '',
 }
@@ -433,7 +435,7 @@ function ManageStudents({ year }: { year?: string }) {
   const [modalOpen, setModalOpen] = useState(false)
   const [form, setForm] = useState<StudentFormState>({
     ...STUDENT_INITIAL,
-    classId: filteredClasses[0]?.id ?? '',
+    classId: filteredClasses.filter((c) => c.grade === 10)[0]?.id ?? '',
   })
   const [errors, setErrors] = useState<Partial<Record<keyof StudentFormState, string>>>({})
 
@@ -441,7 +443,11 @@ function ManageStudents({ year }: { year?: string }) {
     setForm((prev) => ({ ...prev, [key]: value }))
 
   const resetForm = () => {
-    setForm({ ...STUDENT_INITIAL, classId: filteredClasses[0]?.id ?? '' })
+    const grade10Classes = filteredClasses.filter((c) => c.grade === 10)
+    setForm({
+      ...STUDENT_INITIAL,
+      classId: grade10Classes[0]?.id ?? '',
+    })
     setErrors({})
   }
 
@@ -462,7 +468,8 @@ function ManageStudents({ year }: { year?: string }) {
     if (!form.phone.trim()) next.phone = 'Phone number is required.'
     else if (!/^[+\d][\d\s().-]{6,}$/.test(form.phone.trim()))
       next.phone = 'Enter a valid phone number.'
-    if (!form.classId) next.classId = 'Assign a class.'
+    const selectedGrade = parseInt(form.grade, 10) as Grade
+    if (selectedGrade !== 9 && !form.classId) next.classId = 'Assign a class.'
     const ageNumber = Number(form.age)
     if (!form.age) next.age = 'Age is required.'
     else if (Number.isNaN(ageNumber) || ageNumber < 5 || ageNumber > 100)
@@ -474,7 +481,7 @@ function ManageStudents({ year }: { year?: string }) {
     if (Object.keys(next).length > 0) return
 
     const selectedClass = classes.find((c) => c.id === form.classId)
-    const grade = (selectedClass?.grade ?? 10) as Grade
+    const grade = selectedClass ? (selectedClass.grade as Grade) : selectedGrade
 
     addUser({
       email,
@@ -484,7 +491,7 @@ function ManageStudents({ year }: { year?: string }) {
       age: ageNumber,
       password: 'student123',
       role: 'student',
-      classId: form.classId,
+      classId: form.classId || undefined,
       grade,
     })
 
@@ -562,18 +569,43 @@ function ManageStudents({ year }: { year?: string }) {
           />
           <FormField
             as="select"
+            label="Grade"
+            name="studentGrade"
+            value={form.grade}
+            onChange={(e) => {
+              const selectedGrade = e.target.value
+              update('grade', selectedGrade)
+              const gradeVal = parseInt(selectedGrade, 10)
+              const matchingClasses = filteredClasses.filter((c) => c.grade === gradeVal)
+              update('classId', matchingClasses[0]?.id ?? '')
+            }}
+            error={errors.grade}
+          >
+            <option value="9">Grade 9</option>
+            <option value="10">Grade 10</option>
+            <option value="11">Grade 11</option>
+            <option value="12">Grade 12</option>
+          </FormField>
+          <FormField
+            as="select"
             label="Class"
             name="studentClass"
             value={form.classId}
             onChange={(e) => update('classId', e.target.value)}
             error={errors.classId}
           >
-            <option value="">Select a class</option>
-            {filteredClasses.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name} (Grade {c.grade})
-              </option>
-            ))}
+            {parseInt(form.grade, 10) === 9 ? (
+              <option value="">Unassigned</option>
+            ) : (
+              <option value="">Select a class</option>
+            )}
+            {filteredClasses
+              .filter((c) => c.grade === parseInt(form.grade, 10))
+              .map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} (Grade {c.grade})
+                </option>
+              ))}
           </FormField>
           <FormField
             label="Parent Email (optional)"

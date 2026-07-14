@@ -1627,20 +1627,20 @@ GO
 IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'StudentGradeProgressions')
 BEGIN
     CREATE TABLE StudentGradeProgressions (
-        progression_id INT PRIMARY KEY IDENTITY(1,1),
-        student_id UNIQUEIDENTIFIER NOT NULL,
-        school_year_id INT NOT NULL,
-        previous_grade INT NULL,
-        new_grade INT NOT NULL,
+        progressionId INT PRIMARY KEY IDENTITY(1,1),
+        studentId UNIQUEIDENTIFIER NOT NULL,
+        schoolYearId INT NOT NULL,
+        previousGrade INT NULL,
+        newGrade INT NOT NULL,
         reason NVARCHAR(100),
-        progressed_at DATETIME2 NOT NULL DEFAULT GETDATE(),
-        FOREIGN KEY (student_id) REFERENCES Students(StudentId),
-        FOREIGN KEY (school_year_id) REFERENCES SchoolYears(SchoolYearId)
+        progressedAt DATETIME2(7) NOT NULL DEFAULT GETDATE(),
+        FOREIGN KEY (studentId) REFERENCES Students(StudentId),
+        FOREIGN KEY (schoolYearId) REFERENCES SchoolYears(SchoolYearId)
     );
     
     CREATE INDEX idx_student_current_grade ON Students(CurrentGrade);
-    CREATE INDEX idx_progression_student_id ON StudentGradeProgressions(student_id);
-    CREATE INDEX idx_progression_school_year_id ON StudentGradeProgressions(school_year_id);
+    CREATE INDEX idx_progression_student_id ON StudentGradeProgressions(studentId);
+    CREATE INDEX idx_progression_school_year_id ON StudentGradeProgressions(schoolYearId);
     
     PRINT N'âœ“ Created StudentGradeProgressions table with indexes';
 END
@@ -1676,7 +1676,7 @@ GO
 -- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 DECLARE @syId INT = (SELECT SchoolYearId FROM SchoolYears WHERE Name = N'2025-2026');
 
-INSERT INTO StudentGradeProgressions (student_id, school_year_id, previous_grade, new_grade, reason, progressed_at)
+INSERT INTO StudentGradeProgressions (studentId, schoolYearId, previousGrade, newGrade, reason, progressedAt)
 SELECT 
     s.StudentId,
     @syId,

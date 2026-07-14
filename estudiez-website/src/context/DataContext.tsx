@@ -21,6 +21,7 @@ import type {
   TimetableSlot,
   User,
 } from '../types'
+import type { DayOfWeek } from '../types'
 import {
   createLessonSession,
   recordAttendance,
@@ -47,6 +48,9 @@ import {
   getStudents,
   getTeachers,
   getTimetable,
+  createApiTimetable,
+  updateApiTimetable,
+  deleteApiTimetable,
   getUsers,
   GRADE_MAP,
   mapApiAssessmentToExam,
@@ -154,10 +158,30 @@ interface DataContextValue {
   updateChatGroup: (id: string, patch: Partial<Omit<ChatGroup, 'id'>>) => void
   deleteChatGroup: (id: string) => void
   addChatMessage: (message: Omit<ChatMessage, 'id'>) => void
+  addTimetableSlot: (slot: Omit<TimetableSlot, 'id'>, teacherEmail: string) => Promise<TimetableSlot>
+  updateTimetableSlot: (id: number, slot: Partial<Omit<TimetableSlot, 'id'>>, teacherEmail?: string) => Promise<TimetableSlot>
+  deleteTimetableSlot: (id: number) => Promise<void>
   refreshData: () => void
 }
 
 export const DataContext = createContext<DataContextValue | undefined>(undefined)
+
+const PERIOD_TIME_BOUNDS: Record<number, { start: string; end: string }> = {
+  1: { start: '07:30:00', end: '08:15:00' },
+  2: { start: '08:25:00', end: '09:10:00' },
+  3: { start: '09:20:00', end: '10:05:00' },
+  4: { start: '10:15:00', end: '11:00:00' },
+  5: { start: '11:10:00', end: '11:55:00' },
+  6: { start: '13:00:00', end: '13:45:00' },
+  7: { start: '13:50:00', end: '14:35:00' },
+  8: { start: '14:40:00', end: '15:25:00' },
+  9: { start: '15:30:00', end: '16:15:00' },
+  10: { start: '16:20:00', end: '17:05:00' },
+}
+
+const LOCAL_DAY_TO_NUM_MAP: Record<DayOfWeek, number> = {
+  Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6
+}
 
 export function DataProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
@@ -940,6 +964,117 @@ export function DataProvider({ children }: { children: ReactNode }) {
     [users],
   )
 
+  const addTimetableSlot = useCallback(
+    async (slot: Omit<TimetableSlot, 'id'>, teacherEmail: string) => {
+      const classIdInt = classBackendIdByFrontId.current.get(slot.classId)
+      if (!classIdInt) throw new Error('Invalid class ID')
+
+      const subjectId = Number(Object.entries(SUBJECT_ID_MAP).find(([_, name]) => name === slot.subject)?.[0] ?? 1)
+      const semId = Number(Object.entries(SEMESTER_ID_MAP).find(([_, id]) => id === slot.semesterId)?.[0] ?? 1)
+      
+      const teacherUUID = teacherIdByEmail.current.get(teacherEmail.toLowerCase())
+      if (!teacherUUID) throw new Error('Invalid teacher email')
+
+      const dayOfWeekNum = LOCAL_DAY_TO_NUM_MAP[slot.day] ?? 1
+      const timeBounds = PERIOD_TIME_BOUNDS[slot.period] || { start: '00:00:00', end: '00:00:00' }
+
+      const sem = semesters.find(s => s.id === slot.semesterId)
+      const effFrom = sem ? sem.startDate : '2026-06-01'
+      const effTo = sem ? sem.endDate : '2026-11-30'
+
+      const apiSlot = {
+        classId: classIdInt,
+        subjectId,
+        teacherId: teacherUUID,
+        semesterId: semId,
+        dayOfWeek: dayOfWeekNum,
+        periodNo: slot.period,
+        startTime: timeBounds.start,
+        endTime: timeBounds.end,
+        room: slot.room,
+        effectiveFrom: effFrom,
+        effectiveTo: effTo
+      }
+
+      const created = await createApiTimetable(apiSlot)
+      
+      const mapped = mapApiTimetableSlot(
+        created,
+        new Map(users.map(u => [u.userId?.toLowerCase() ?? '', u.fullName]))
+      )
+      
+      setTimetable(prev => [...prev, mapped])
+      return mapped
+    },
+    [users, semesters]
+  )
+
+  const updateTimetableSlot = useCallback(
+    async (id: number, patch: Partial<Omit<TimetableSlot, 'id'>>, teacherEmail?: string) => {
+      const existing = timetable.find(s => s.id === id)
+      if (!existing) throw new Error('Slot not found')
+
+      const merged = { ...existing, ...patch }
+      
+      const classIdInt = classBackendIdByFrontId.current.get(merged.classId)
+      if (!classIdInt) throw new Error('Invalid class ID')
+
+      const subjectId = Number(Object.entries(SUBJECT_ID_MAP).find(([_, name]) => name === merged.subject)?.[0] ?? 1)
+      const semId = Number(Object.entries(SEMESTER_ID_MAP).find(([_, id]) => id === merged.semesterId)?.[0] ?? 1)
+      
+      let teacherUUID: string | undefined
+      if (teacherEmail) {
+        teacherUUID = teacherIdByEmail.current.get(teacherEmail.toLowerCase())
+      } else {
+        const teacherUser = users.find(u => u.role === 'teacher' && u.fullName === merged.teacher)
+        if (teacherUser) {
+          teacherUUID = userIdByEmail.current.get(teacherUser.email.toLowerCase())
+        }
+      }
+      
+      const dayOfWeekNum = LOCAL_DAY_TO_NUM_MAP[merged.day] ?? 1
+      const timeBounds = PERIOD_TIME_BOUNDS[merged.period] || { start: '00:00:00', end: '00:00:00' }
+
+      const sem = semesters.find(s => s.id === merged.semesterId)
+      const effFrom = sem ? sem.startDate : '2026-06-01'
+      const effTo = sem ? sem.endDate : '2026-11-30'
+
+      const apiSlot = {
+        timetableSlotId: id,
+        classId: classIdInt,
+        subjectId,
+        teacherId: teacherUUID,
+        semesterId: semId,
+        dayOfWeek: dayOfWeekNum,
+        periodNo: merged.period,
+        startTime: timeBounds.start,
+        endTime: timeBounds.end,
+        room: merged.room,
+        effectiveFrom: effFrom,
+        effectiveTo: effTo
+      }
+
+      const updated = await updateApiTimetable(id, apiSlot)
+      
+      const mapped = mapApiTimetableSlot(
+        updated,
+        new Map(users.map(u => [u.userId?.toLowerCase() ?? '', u.fullName]))
+      )
+      
+      setTimetable(prev => prev.map(s => s.id === id ? mapped : s))
+      return mapped
+    },
+    [timetable, users, semesters]
+  )
+
+  const deleteTimetableSlot = useCallback(
+    async (id: number) => {
+      await deleteApiTimetable(id)
+      setTimetable(prev => prev.filter(s => s.id !== id))
+    },
+    []
+  )
+
   const value = useMemo<DataContextValue>(
     () => ({
       loading,
@@ -992,6 +1127,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
       updateChatGroup,
       deleteChatGroup,
       addChatMessage,
+      addTimetableSlot,
+      updateTimetableSlot,
+      deleteTimetableSlot,
       refreshData,
     }),
     [
@@ -1045,6 +1183,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
       updateChatGroup,
       deleteChatGroup,
       addChatMessage,
+      addTimetableSlot,
+      updateTimetableSlot,
+      deleteTimetableSlot,
       refreshData,
     ],
   )
