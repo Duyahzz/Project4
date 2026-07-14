@@ -3,7 +3,7 @@ export type Role = 'admin' | 'teacher' | 'student' | 'parent'
 /** Hệ đào tạo — distinguishes regular classes from out-of-hours revision classes. */
 export type TrainingSystem = 'regular' | 'revision'
 
-export type Grade = 10 | 11 | 12
+export type Grade = 9 | 10 | 11 | 12
 
 export type DayOfWeek = 'Mon' | 'Tue' | 'Wed' | 'Thu' | 'Fri' | 'Sat'
 

@@ -1,13 +1,30 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Card } from '../components/Card'
 import { FormField } from '../components/FormField'
+import { Modal } from '../components/Modal'
+import { useAuth } from '../hooks/useAuth'
 import { useData } from '../hooks/useData'
 import { useToast } from '../hooks/useToast'
 import { classDetailPath } from './classDetailPath'
 import { userDetailPath } from './userDetailPath'
 import { enrollStudentInClass, removeStudentFromClass } from '../services/api'
-import type { Exam, Grade, SchoolClass, ScoreDetail, User } from '../types'
+import type { DayOfWeek, Exam, Grade, SchoolClass, ScoreDetail, TimetableSlot, User } from '../types'
+
+const DAYS: DayOfWeek[] = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const PERIODS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+const PERIOD_TIME: Record<number, string> = {
+  1: '07:30–08:15',
+  2: '08:25–09:10',
+  3: '09:20–10:05',
+  4: '10:15–11:00',
+  5: '11:10–11:55',
+  6: '13:00–13:45',
+  7: '13:50–14:35',
+  8: '14:40–15:25',
+  9: '15:30–16:15',
+  10: '16:20–17:05',
+}
 
 function average(values: number[]) {
   if (values.length === 0) return null
@@ -32,12 +49,30 @@ export function ClassDetailPage() {
   const { classId: classIdParam } = useParams<{ classId: string }>()
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
-  const { classes, users, scores, progress, timetable, deleteClass, updateUser, schoolYears } = useData()
+  const { currentUser } = useAuth()
+  const isAdmin = currentUser?.role === 'admin'
+  const {
+    classes,
+    users,
+    scores,
+    progress,
+    timetable,
+    deleteClass,
+    updateUser,
+    schoolYears,
+    semesters,
+    subjects,
+    addTimetableSlot,
+    updateTimetableSlot,
+    deleteTimetableSlot,
+  } = useData()
   const { push } = useToast()
   const [editing, setEditing] = useState(false)
   const [provisionOpen, setProvisionOpen] = useState(false)
   const [provisionSearch, setProvisionSearch] = useState('')
   const [provisioning, setProvisioning] = useState<string | null>(null) // studentId being processed
+
+
  
   const classId = classIdParam ? decodeURIComponent(classIdParam) : ''
   const schoolClass = classes.find((c) => c.id === classId)
@@ -95,6 +130,174 @@ export function ClassDetailPage() {
 
   const teachers = useMemo(() => users.filter((u) => u.role === 'teacher'), [users])
   const homeroom = users.find((u) => u.email === schoolClass?.homeroomTeacher)
+
+  // Timetable management states
+  const [timetableSemesterId, setTimetableSemesterId] = useState('')
+  const [timetableModalOpen, setTimetableModalOpen] = useState(false)
+  const [editingSlot, setEditingSlot] = useState<TimetableSlot | null>(null)
+  const [selectedDay, setSelectedDay] = useState<DayOfWeek>('Mon')
+  const [selectedPeriod, setSelectedPeriod] = useState<number>(1)
+  
+  const [formSubject, setFormSubject] = useState('')
+  const [formTeacherEmail, setFormTeacherEmail] = useState('')
+  const [formRoom, setFormRoom] = useState('')
+  const [formSystem, setFormSystem] = useState<'regular' | 'revision'>('regular')
+  const [formError, setFormError] = useState('')
+
+  // Initialize default semester ID
+  useEffect(() => {
+    if (semesters.length > 0 && !timetableSemesterId) {
+      setTimetableSemesterId(semesters[0].id)
+    }
+  }, [semesters, timetableSemesterId])
+
+  const activeTimetableSemesterId = timetableSemesterId || semesters[0]?.id || ''
+  const classTimetableSlots = useMemo(() => {
+    return timetable.filter(
+      (s) => s.classId === classId && s.semesterId === activeTimetableSemesterId
+    )
+  }, [timetable, classId, activeTimetableSemesterId])
+
+  const lookupSlot = (day: string, period: number) => {
+    return classTimetableSlots.find((s) => s.day === day && s.period === period)
+  }
+
+  const openAddSlot = (day: DayOfWeek, period: number) => {
+    if (!isAdmin) return
+    setEditingSlot(null)
+    setSelectedDay(day)
+    setSelectedPeriod(period)
+    
+    // Default values
+    setFormSubject(subjects[0]?.name || '')
+    setFormTeacherEmail(teachers[0]?.email || '')
+    setFormRoom(schoolClass?.room || '')
+    setFormSystem('regular')
+    setFormError('')
+    setTimetableModalOpen(true)
+  }
+
+  const openEditSlot = (slot: TimetableSlot) => {
+    if (!isAdmin) return
+    setEditingSlot(slot)
+    setSelectedDay(slot.day)
+    setSelectedPeriod(slot.period)
+    setFormSubject(slot.subject)
+    
+    const tUser = users.find(u => u.role === 'teacher' && u.fullName === slot.teacher)
+    setFormTeacherEmail(tUser?.email || teachers[0]?.email || '')
+    
+    setFormRoom(slot.room)
+    setFormSystem(slot.system as 'regular' | 'revision')
+    setFormError('')
+    setTimetableModalOpen(true)
+  }
+
+  const handleDeleteSlot = async (id: number) => {
+    if (!window.confirm('Are you sure you want to delete this timetable slot?')) return
+    try {
+      await deleteTimetableSlot(id)
+      push('info', 'Timetable slot removed.')
+    } catch (err: any) {
+      push('error', err?.message || 'Failed to delete slot.')
+    }
+  }
+
+  const handleSaveSlot = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setFormError('')
+
+    const targetDay = selectedDay
+    const targetPeriod = selectedPeriod
+    const targetRoom = formRoom.trim()
+    const targetSystem = formSystem
+    const targetSubject = formSubject
+    const activeSem = activeTimetableSemesterId
+
+    if (!targetRoom) {
+      setFormError('Room is required.')
+      return
+    }
+
+    const tUser = users.find((u) => u.role === 'teacher' && u.email === formTeacherEmail)
+    if (!tUser) {
+      setFormError('Invalid teacher selected.')
+      return
+    }
+    const teacherName = tUser.fullName
+
+    // 1. Conflict Check: Class conflict
+    const classConflict = timetable.find(
+      (s) =>
+        s.semesterId === activeSem &&
+        s.day === targetDay &&
+        s.period === targetPeriod &&
+        s.classId === classId &&
+        (!editingSlot || s.id !== editingSlot.id)
+    )
+    if (classConflict) {
+      setFormError(`Class conflict: This class already has ${classConflict.subject} scheduled at ${targetDay} P${targetPeriod}.`)
+      return
+    }
+
+    // 2. Conflict Check: Room conflict
+    const roomConflict = timetable.find(
+      (s) =>
+        s.semesterId === activeSem &&
+        s.day === targetDay &&
+        s.period === targetPeriod &&
+        s.room.toLowerCase() === targetRoom.toLowerCase() &&
+        s.classId !== classId &&
+        (!editingSlot || s.id !== editingSlot.id)
+    )
+    if (roomConflict) {
+      const otherClass = classes.find(c => c.id === roomConflict.classId)
+      setFormError(`Room conflict: Room ${targetRoom} is already occupied by Class ${otherClass?.name || roomConflict.classId} at ${targetDay} P${targetPeriod}.`)
+      return
+    }
+
+    // 3. Conflict Check: Teacher conflict
+    const teacherConflict = timetable.find(
+      (s) =>
+        s.semesterId === activeSem &&
+        s.day === targetDay &&
+        s.period === targetPeriod &&
+        s.teacher.toLowerCase() === teacherName.toLowerCase() &&
+        s.classId !== classId &&
+        (!editingSlot || s.id !== editingSlot.id)
+    )
+    if (teacherConflict) {
+      const otherClass = classes.find(c => c.id === teacherConflict.classId)
+      setFormError(`Teacher conflict: Teacher ${teacherName} is already teaching Class ${otherClass?.name || teacherConflict.classId} at ${targetDay} P${targetPeriod}.`)
+      return
+    }
+
+    try {
+      const slotData = {
+        classId,
+        day: targetDay,
+        period: targetPeriod,
+        startTime: '',
+        endTime: '',
+        subject: targetSubject,
+        teacher: teacherName,
+        room: targetRoom,
+        system: targetSystem,
+        semesterId: activeSem
+      }
+
+      if (editingSlot) {
+        await updateTimetableSlot(editingSlot.id, slotData, formTeacherEmail)
+        push('success', 'Timetable slot updated successfully.')
+      } else {
+        await addTimetableSlot(slotData, formTeacherEmail)
+        push('success', 'Timetable slot created successfully.')
+      }
+      setTimetableModalOpen(false)
+    } catch (err: any) {
+      setFormError(err?.message || 'Failed to save timetable slot.')
+    }
+  }
 
   if (!schoolClass) {
     return (
@@ -417,6 +620,190 @@ export function ClassDetailPage() {
           </div>
         )}
       </div>
+
+      {/* ── Timetable Card ── */}
+      <Card
+        title="Class Timetable"
+        description="Weekly timetable schedule. Administrators can click '+' to add slots, or click edit/delete on existing slots."
+      >
+        <div className="space-y-4">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold text-slate-600">Semester:</span>
+              {semesters.length === 0 ? (
+                <span className="text-sm text-slate-400">No semesters defined</span>
+              ) : (
+                <select
+                  value={activeTimetableSemesterId}
+                  onChange={(e) => setTimetableSemesterId(e.target.value)}
+                  className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 bg-white"
+                >
+                  {semesters.map((sem) => (
+                    <option key={sem.id} value={sem.id}>
+                      {sem.name} ({sem.year})
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          </div>
+
+          <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+            <table className="min-w-full text-sm border-collapse">
+              <thead>
+                <tr className="bg-slate-50 text-slate-500 border-b border-slate-200">
+                  <th className="py-2.5 px-4 text-left text-xs font-semibold uppercase tracking-wider w-24">Period</th>
+                  {DAYS.map((day) => (
+                    <th key={day} className="py-2.5 px-4 text-center text-xs font-semibold uppercase tracking-wider">
+                      {day}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {PERIODS.map((period) => (
+                  <tr key={period} className="border-b border-slate-100 hover:bg-slate-50/40 align-top">
+                    <td className="py-3 px-4 font-medium text-slate-700">
+                      <span className="block text-sm">P{period}</span>
+                      {PERIOD_TIME[period] && (
+                        <span className="text-xs text-slate-400 font-normal">{PERIOD_TIME[period]}</span>
+                      )}
+                    </td>
+                    {DAYS.map((day) => {
+                      const slot = lookupSlot(day, period)
+                      return (
+                        <td key={day} className="py-2 px-2 text-center h-20 min-w-[120px]">
+                          {slot ? (
+                            <div className="relative group rounded-lg p-2 bg-indigo-50 border border-indigo-100 text-left h-full flex flex-col justify-between">
+                              <div>
+                                <p className="font-bold text-xs text-indigo-900 line-clamp-1">{slot.subject}</p>
+                                <p className="text-[10px] text-slate-500 truncate mt-0.5" title={slot.teacher}>{slot.teacher}</p>
+                                <p className="text-[10px] text-indigo-700 font-semibold mt-0.5">Room {slot.room}</p>
+                              </div>
+                              {isAdmin && (
+                                <div className="absolute right-1.5 bottom-1.5 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 bg-indigo-50 pl-2 rounded">
+                                  <button
+                                    onClick={() => openEditSlot(slot)}
+                                    className="p-1 hover:bg-indigo-200 rounded text-slate-600 transition-colors"
+                                    title="Edit slot"
+                                  >
+                                    ✏️
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteSlot(slot.id)}
+                                    className="p-1 hover:bg-rose-100 rounded text-rose-600 transition-colors"
+                                    title="Delete slot"
+                                  >
+                                    🗑️
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            isAdmin ? (
+                              <button
+                                onClick={() => openAddSlot(day, period)}
+                                className="w-full h-full rounded-lg border border-dashed border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/20 flex items-center justify-center text-slate-400 hover:text-indigo-600 transition-all font-bold text-sm"
+                              >
+                                +
+                              </button>
+                            ) : (
+                              <span className="text-slate-300 block my-4">—</span>
+                            )
+                          )}
+                        </td>
+                      )
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </Card>
+
+      {/* ── Timetable Slot Modal ── */}
+      <Modal
+        open={timetableModalOpen}
+        onClose={() => setTimetableModalOpen(false)}
+        title={editingSlot ? 'Edit Timetable Slot' : 'Add Timetable Slot'}
+        description={`${selectedDay} Period P${selectedPeriod} (${PERIOD_TIME[selectedPeriod] ?? ''})`}
+      >
+        <form onSubmit={handleSaveSlot} className="space-y-4">
+          {formError && (
+            <div className="bg-rose-50 border-l-4 border-rose-500 p-3 rounded text-rose-700 text-xs font-semibold">
+              {formError}
+            </div>
+          )}
+
+          <FormField
+            as="select"
+            label="Subject"
+            name="subject"
+            value={formSubject}
+            onChange={(e) => setFormSubject(e.target.value)}
+            required
+          >
+            {subjects.map((sub) => (
+              <option key={sub.name} value={sub.name}>
+                {sub.name}
+              </option>
+            ))}
+          </FormField>
+
+          <FormField
+            as="select"
+            label="Teacher"
+            name="teacher"
+            value={formTeacherEmail}
+            onChange={(e) => setFormTeacherEmail(e.target.value)}
+            required
+          >
+            {teachers.map((teach) => (
+              <option key={teach.email} value={teach.email}>
+                {teach.fullName} ({teach.email})
+              </option>
+            ))}
+          </FormField>
+
+          <FormField
+            label="Room"
+            name="room"
+            value={formRoom}
+            onChange={(e) => setFormRoom(e.target.value)}
+            placeholder="e.g. 101, Lab A"
+            required
+          />
+
+          <FormField
+            as="select"
+            label="Training System / Program Type"
+            name="system"
+            value={formSystem}
+            onChange={(e) => setFormSystem(e.target.value as any)}
+            required
+          >
+            <option value="regular">Regular Class (Standard)</option>
+            <option value="revision">Revision / Tutoring</option>
+          </FormField>
+
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={() => setTimetableModalOpen(false)}
+              className="border border-slate-300 text-slate-700 hover:bg-slate-100 font-semibold rounded-md px-4 py-2 text-sm"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-md px-4 py-2 text-sm shadow-xs transition-colors"
+            >
+              Save Slot
+            </button>
+          </div>
+        </form>
+      </Modal>
 
       {classSubjects.length > 0 && (
         <Card title="Subjects & Teachers" description="Assigned subjects and teaching staff for this class.">

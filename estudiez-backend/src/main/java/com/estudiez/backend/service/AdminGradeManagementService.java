@@ -75,8 +75,8 @@ public class AdminGradeManagementService {
             throw new IllegalStateException("Student must be in PENDING_GRADE_ASSIGNMENT status to assign a grade");
         }
         
-        if (gradeLevel < 10 || gradeLevel > 12) {
-            throw new IllegalArgumentException("Grade must be between 10 and 12");
+        if (gradeLevel < 9 || gradeLevel > 12) {
+            throw new IllegalArgumentException("Grade must be between 9 and 12");
         }
         
         student.setCurrentGrade(gradeLevel);
@@ -316,8 +316,8 @@ public class AdminGradeManagementService {
             }
 
             Integer gradeLevel = request.getGradeLevel();
-            if (gradeLevel < 10 || gradeLevel > 12) {
-                throw new IllegalArgumentException("Grade must be between 10 and 12");
+            if (gradeLevel < 9 || gradeLevel > 12) {
+                throw new IllegalArgumentException("Grade must be between 9 and 12");
             }
 
             student.setCurrentGrade(gradeLevel);
