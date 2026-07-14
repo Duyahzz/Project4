@@ -11,34 +11,35 @@ import java.util.UUID;
 @Entity @Table(name = "Students")
 public class Student {
     @Id @GeneratedValue(strategy = GenerationType.UUID)
-    @Column(columnDefinition = "uniqueidentifier")
+    @Column(name = "StudentId", columnDefinition = "uniqueidentifier")
     private UUID studentId;
 
-    @Column(nullable = false, unique = true, columnDefinition = "uniqueidentifier")
+    @Column(name = "UserId", nullable = false, unique = true, columnDefinition = "uniqueidentifier")
     private UUID userId;
 
-    @Column(nullable = false, unique = true, length = 50)
+    @Column(name = "StudentCode", nullable = false, unique = true, length = 50)
     private String studentCode;
 
+    @Column(name = "DateOfBirth")
     private LocalDate dateOfBirth;
 
-    @Column(length = 20)
+    @Column(name = "Gender", length = 20)
     private String gender;
 
-    @Column(columnDefinition = "NVARCHAR(MAX)")
+    @Column(name = "Address", columnDefinition = "NVARCHAR(MAX)")
     private String address;
 
-    @Column(nullable = false)
+    @Column(name = "AdmissionDate", nullable = false)
     private LocalDate admissionDate;
 
-    @Column(nullable = false, length = 30)
+    @Column(name = "Status", nullable = false, length = 30)
     private String status = "ACTIVE";
 
-    @Column()
+    @Column(name = "CurrentGrade")
     private Integer currentGrade;
 
     @CreationTimestamp
-    @Column(nullable = false, updatable = false)
+    @Column(name = "CreatedAt", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 }
 

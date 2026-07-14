@@ -10,24 +10,25 @@ import java.util.UUID;
 @Entity @Table(name = "StudentGradeProgressions")
 public class StudentGradeProgression {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "progression_id")
     private Integer progressionId;
-
-    @Column(nullable = false, columnDefinition = "uniqueidentifier")
+ 
+    @Column(name = "student_id", nullable = false, columnDefinition = "uniqueidentifier")
     private UUID studentId;
-
-    @Column(nullable = false)
+ 
+    @Column(name = "school_year_id", nullable = false)
     private Integer schoolYearId;
-
-    @Column(nullable = true)
+ 
+    @Column(name = "previous_grade", nullable = true)
     private Integer previousGrade;
-
-    @Column(nullable = false)
+ 
+    @Column(name = "new_grade", nullable = false)
     private Integer newGrade;
-
-    @Column(length = 100)
+ 
+    @Column(name = "reason", length = 100)
     private String reason; // e.g., "YEAR_END_PROMOTION", "MANUAL_ASSIGNMENT"
-
+ 
     @CreationTimestamp
-    @Column(nullable = false, updatable = false)
+    @Column(name = "progressed_at", nullable = false, updatable = false)
     private LocalDateTime progressedAt;
 }

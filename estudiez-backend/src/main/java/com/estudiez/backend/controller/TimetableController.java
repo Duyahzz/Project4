@@ -45,4 +45,12 @@ public class TimetableController {
         timetableService.delete(id);
         return ResponseEntity.noContent().build();
     }
+ 
+    @PostMapping("/clone-year")
+    public ResponseEntity<Integer> cloneTimetableSlots(
+            @RequestParam Integer sourceYearId,
+            @RequestParam Integer targetYearId) {
+        int count = timetableService.cloneTimetableSlots(sourceYearId, targetYearId);
+        return ResponseEntity.ok(count);
+    }
 }

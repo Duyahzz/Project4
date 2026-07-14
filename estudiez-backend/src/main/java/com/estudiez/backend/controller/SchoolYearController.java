@@ -1,7 +1,9 @@
 package com.estudiez.backend.controller;
 
 import com.estudiez.backend.entity.SchoolYear;
+import com.estudiez.backend.entity.Semester;
 import com.estudiez.backend.repository.SchoolYearRepository;
+import com.estudiez.backend.repository.SemesterRepository;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -19,6 +21,7 @@ import java.util.Map;
 public class SchoolYearController {
 
     private final SchoolYearRepository schoolYearRepository;
+    private final SemesterRepository semesterRepository;
 
     @GetMapping
     @Operation(summary = "Get all school years")
@@ -62,7 +65,43 @@ public class SchoolYearController {
                             .endDate(endDate)
                             .isCurrent(false)
                             .build();
-                    return ResponseEntity.ok(schoolYearRepository.save(newYear));
+                    SchoolYear saved = schoolYearRepository.save(newYear);
+
+                    // Auto-create Semester 1 and Semester 2 for the new school year
+                    Semester sem1 = Semester.builder()
+                            .schoolYearId(saved.getSchoolYearId())
+                            .name("Semester 1")
+                            .startDate(startDate)
+                            .endDate(startDate.plusMonths(5))
+                            .build();
+                    Semester sem2 = Semester.builder()
+                            .schoolYearId(saved.getSchoolYearId())
+                            .name("Semester 2")
+                            .startDate(startDate.plusMonths(6))
+                            .endDate(endDate)
+                            .build();
+                    semesterRepository.save(sem1);
+                    semesterRepository.save(sem2);
+
+                    return ResponseEntity.ok(saved);
                 });
+    }
+ 
+    @PutMapping("/{id}/set-current")
+    @Operation(summary = "Set the school year as current active year")
+    public ResponseEntity<SchoolYear> setCurrentYear(@PathVariable Integer id) {
+        return schoolYearRepository.findById(id)
+                .map(sy -> {
+                    // Set all other school years to not current
+                    schoolYearRepository.findAll().forEach(other -> {
+                        if (other.getIsCurrent() != null && other.getIsCurrent()) {
+                            other.setIsCurrent(false);
+                            schoolYearRepository.save(other);
+                        }
+                    });
+                    sy.setIsCurrent(true);
+                    return ResponseEntity.ok(schoolYearRepository.save(sy));
+                })
+                .orElse(ResponseEntity.notFound().build());
     }
 }

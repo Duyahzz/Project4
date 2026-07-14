@@ -52,11 +52,15 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     try {
       const bodyText = await res.text()
       if (bodyText) {
-        const parsed = JSON.parse(bodyText)
-        if (parsed && parsed.message) {
-          errorMsg = parsed.message
-        } else if (typeof parsed === 'string') {
-          errorMsg = parsed
+        try {
+          const parsed = JSON.parse(bodyText)
+          if (parsed && parsed.message) {
+            errorMsg = parsed.message
+          } else if (typeof parsed === 'string') {
+            errorMsg = parsed
+          }
+        } catch {
+          errorMsg = bodyText
         }
       }
     } catch (e) {
@@ -198,6 +202,27 @@ export const getSchoolYears = () =>
   apiGet<ApiSchoolYear[]>('/api/school-years')
 export const findOrCreateSchoolYear = (name: string) =>
   apiPost<ApiSchoolYear>('/api/school-years/find-or-create', { name })
+export const setSchoolYearCurrent = (schoolYearId: number) =>
+  apiPut<ApiSchoolYear>(`/api/school-years/${schoolYearId}/set-current`, {})
+ 
+export interface ApiSemester {
+  semesterId: number
+  schoolYearId: number
+  name: string
+  startDate: string
+  endDate: string
+}
+export const getSemesters = () =>
+  apiGet<ApiSemester[]>('/api/semesters')
+
+// ─── Enrollment ────────────────────────────────────────────────────────────────
+/** Enroll a student into a class. Rejects if class is at capacity. */
+export const enrollStudentInClass = (classId: string, studentId: string) =>
+  apiPost<{ message: string }>('/api/enrollments/enroll', { classId, studentId })
+
+/** Remove a student from a class (soft-delete their enrollment). */
+export const removeStudentFromClass = (classId: string, studentId: string) =>
+  apiPost<{ message: string }>('/api/enrollments/remove', { classId, studentId })
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 export interface LoginResponse {
@@ -257,9 +282,27 @@ export function mapApiUsersToFrontend(
     if (role === 'teacher') {
       const t = teacherByUserId.get(uIdLower)
       if (t?.subjectId) base.subject = SUBJECT_ID_MAP[t.subjectId] ?? String(t.subjectId)
+      if (t?.teacherId) base.teacherId = String(t.teacherId)
+    }
+
+    if (role === 'student' && student) {
+      const s = student as any
+      if (s.studentId) {
+        base.studentId = String(s.studentId)
+      }
+      if (s.admissionDate) {
+        base.admissionDate = String(s.admissionDate)
+      }
+      if (s.currentGrade != null) {
+        base.grade = s.currentGrade as Grade
+      }
     }
 
     return base
+  }).filter(u => {
+    if (u.role === 'student') return u.studentId !== undefined
+    if (u.role === 'teacher') return u.teacherId !== undefined
+    return true
   })
 }
 
@@ -442,6 +485,8 @@ export const getTimetable        = (classId?: number) =>
 export const createApiTimetable  = (s: ApiTimetableSlot) => apiPost<ApiTimetableSlot>('/api/timetable', s)
 export const updateApiTimetable  = (id: number, s: ApiTimetableSlot) => apiPut<ApiTimetableSlot>(`/api/timetable/${id}`, s)
 export const deleteApiTimetable  = (id: number) => apiDel(`/api/timetable/${id}`)
+export const cloneTimetableYear  = (sourceYearId: number, targetYearId: number) =>
+  apiPost<number>(`/api/timetable/clone-year?sourceYearId=${sourceYearId}&targetYearId=${targetYearId}`, {})
 
 // ─── Study Resources ─────────────────────────────────────────────────────────
 export const getResources        = (classId?: number) =>

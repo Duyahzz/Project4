@@ -3,11 +3,17 @@ import { Card } from '../../components/Card'
 import { FormField } from '../../components/FormField'
 import { useData } from '../../hooks/useData'
 import { useToast } from '../../hooks/useToast'
-import { batchPromoteStudents, batchAssignGradeAndClass, updateApiClass, getSchoolYears, findOrCreateSchoolYear } from '../../services/api'
+import { batchPromoteStudents, batchAssignGradeAndClass, updateApiClass, getSchoolYears, findOrCreateSchoolYear, createApiClass, getClasses, setSchoolYearCurrent, cloneTimetableYear } from '../../services/api'
 import type { ApiSchoolYear } from '../../services/api'
 
+const AVAILABLE_ROOMS = [
+  'Room 101', 'Room 102', 'Room 103', 'Room 104',
+  'Room 201', 'Room 202', 'Room 203', 'Room 204',
+  'Room 301', 'Room 302', 'Room 303', 'Room 304'
+]
+
 export function ManageGrades() {
-  const { users, classes, scores, updateUser, updateClass } = useData()
+  const { users, classes, scores, updateUser, updateClass, refreshData } = useData()
   const { push } = useToast()
   
   // Step state: 1 (Setup/Intro), 2 (Phase 1: Graduation), 3 (Phase 2: Promote G11), 4 (Phase 3: Promote G10), 5 (Phase 4: Enroll New Hires), 6 (Summary)
@@ -100,11 +106,12 @@ export function ManageGrades() {
       const sorted = [...years].sort((a, b) => b.name.localeCompare(a.name))
       setDbSchoolYears(sorted)
       if (sorted.length > 0 && !selectedSourceYear) {
-        setSelectedSourceYear(sorted[0].name)
-        setSelectedSourceYearId(sorted[0].schoolYearId)
+        const currentYear = sorted.find(y => y.isCurrent) || sorted[0]
+        setSelectedSourceYear(currentYear.name)
+        setSelectedSourceYearId(currentYear.schoolYearId)
         // Auto-suggest next target year name
         if (!selectedTargetYear) {
-          const suggested = suggestNextYear(sorted[0].name)
+          const suggested = suggestNextYear(currentYear.name)
           setSelectedTargetYear(suggested)
         }
       }
@@ -121,7 +128,7 @@ export function ManageGrades() {
         initialConfigs[c.id] = {
           homeroomTeacher: c.homeroomTeacher ?? '',
           room: c.room ?? '',
-          studentLimit: c.studentLimit ?? 40,
+          studentLimit: c.studentLimit ?? 20,
         }
       }
     })
@@ -200,6 +207,38 @@ export function ManageGrades() {
     )
   }
 
+  // Filter free classrooms dynamically
+  const getAvailableRooms = (currentClassId: string) => {
+    const dbAssignedRooms = new Set(
+      classes
+        .filter(c => c.year === selectedTargetYear && c.id !== currentClassId && c.room)
+        .map(c => c.room)
+    )
+    const wizardAssignedRooms = new Set<string>()
+    Object.entries(classConfigs).forEach(([id, config]) => {
+      if (id !== currentClassId && config.room) {
+        wizardAssignedRooms.add(config.room)
+      }
+    })
+    return AVAILABLE_ROOMS.filter(
+      r => !dbAssignedRooms.has(r) && !wizardAssignedRooms.has(r)
+    )
+  }
+
+  // Filter target classes that are not already mapped by another source class
+  const getAvailableTargetClasses = (
+    allTargets: typeof classes,
+    currentSourceId: string,
+    mappings: Record<string, string>,
+  ) => {
+    const selectedByOthers = new Set(
+      Object.entries(mappings)
+        .filter(([srcId]) => srcId !== currentSourceId)
+        .map(([, targetId]) => targetId)
+    )
+    return allTargets.filter(tc => !selectedByOthers.has(tc.id))
+  }
+
   // Get current active capacities in wizard step
   const getMappedClassCounts = (phase: 'G11' | 'G10' | 'NEWHIRES') => {
     const counts: Record<string, number> = {}
@@ -235,12 +274,98 @@ export function ManageGrades() {
   const hasExceededLimits = (phase: 'G11' | 'G10' | 'NEWHIRES') => {
     const counts = getMappedClassCounts(phase)
     return Object.entries(counts).some(([cid, count]) => {
-      const limit = classConfigs[cid]?.studentLimit ?? 40
+      const limit = classConfigs[cid]?.studentLimit ?? 20
       return count > limit
     })
   }
 
   // --- Handlers ---
+  const handleStartRollover = async () => {
+    if (selectedSourceYear === selectedTargetYear) {
+      push('error', 'Source year and Target year must be different.')
+      return
+    }
+    setIsProcessing(true)
+    try {
+      // 1. Ensure target year exists in DB
+      const targetYearRecord = await findOrCreateSchoolYear(selectedTargetYear)
+      const targetYearId = targetYearRecord.schoolYearId
+      setSelectedTargetYearId(targetYearId)
+
+      // 2. Fetch fresh classes from API to prevent duplicate key violations
+      const freshApiClasses = await getClasses()
+
+      // Create target classes by copying from source year
+      const sourceClasses = classes.filter(c => c.year === selectedSourceYear)
+      
+      if (sourceClasses.length === 0) {
+        throw new Error(`No source classes found in year ${selectedSourceYear} to roll over.`)
+      }
+
+      let createdCount = 0
+      for (const sc of sourceClasses) {
+        let targetGradeId = 1
+        let targetName = sc.name
+
+        if (sc.grade === 10) {
+          targetGradeId = 2 // G11
+          targetName = sc.name.replace('10', '11')
+        } else if (sc.grade === 11) {
+          targetGradeId = 3 // G12
+          targetName = sc.name.replace('11', '12')
+        } else if (sc.grade === 12) {
+          targetGradeId = 1 // G10
+          targetName = sc.name.replace('12', '10')
+        }
+
+        // Check if this class already exists in the database
+        const alreadyExists = freshApiClasses.some(ec => 
+          ec.schoolYearId === targetYearId && 
+          ec.name === targetName && 
+          ec.trainingProgram === 'REGULAR'
+        )
+
+        if (!alreadyExists) {
+          await createApiClass({
+            schoolYearId: targetYearId,
+            gradeId: targetGradeId,
+            name: targetName,
+            homeroomTeacherId: null,
+            room: '',
+            studentLimit: 20, // default limit is 20
+            trainingProgram: 'REGULAR',
+            isActive: true
+          })
+          createdCount++
+        }
+      }
+
+      // Trigger context refresh to reload new classes
+      refreshData()
+      if (createdCount > 0) {
+        push('success', `Initialized ${createdCount} classes for ${selectedTargetYear} with 20 student limit default.`)
+      }
+ 
+      // Clone weekly timetables and teaching assignments from corresponding classes
+      try {
+        const clonedSlotsCount = await cloneTimetableYear(selectedSourceYearId, targetYearId)
+        if (clonedSlotsCount > 0) {
+          push('success', `Copied ${clonedSlotsCount} weekly timetable schedules and teaching assignments from corresponding ${selectedSourceYear} classes.`)
+        }
+      } catch (cloneErr: any) {
+        console.error('Failed to clone weekly timetables:', cloneErr)
+        push('info', 'Could not copy timetables automatically from the previous year.')
+      }
+ 
+      setCurrentStep(2)
+    } catch (err: any) {
+      push('error', err?.message || 'Failed to initialize rollover.')
+      console.error(err)
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
   const executeGraduation = async () => {
     setIsProcessing(true)
     try {
@@ -255,7 +380,7 @@ export function ManageGrades() {
       const targetYearRecord = await findOrCreateSchoolYear(selectedTargetYear)
       setSelectedTargetYearId(targetYearRecord.schoolYearId)
 
-      const studentIds = candidates.map(s => s.userId || '').filter(Boolean)
+      const studentIds = candidates.map(s => s.studentId || s.userId || '').filter(Boolean)
       const mappings = Array.from(new Set(candidates.map(s => s.classId))).map(cid => ({
         sourceClassId: Number(cid),
         targetClassId: null
@@ -307,7 +432,7 @@ export function ManageGrades() {
             throw new Error(`Target class ${targetClass.name} must have a homeroom teacher and room assigned.`);
           }
           const teacherUser = users.find(u => u.email === config.homeroomTeacher)
-          const teacherId = teacherUser?.userId
+          const teacherId = teacherUser?.teacherId
           
           await updateApiClass(Number(cid), {
             name: targetClass.name,
@@ -331,7 +456,7 @@ export function ManageGrades() {
         targetClassId: Number(targetId)
       }))
 
-      const studentIds = candidates.map(s => s.userId || '').filter(Boolean)
+      const studentIds = candidates.map(s => s.studentId || s.userId || '').filter(Boolean)
 
       await batchPromoteStudents({
         sourceSchoolYearId: selectedSourceYearId,
@@ -380,7 +505,7 @@ export function ManageGrades() {
             throw new Error(`Target class ${targetClass.name} must have a homeroom teacher and room assigned.`);
           }
           const teacherUser = users.find(u => u.email === config.homeroomTeacher)
-          const teacherId = teacherUser?.userId
+          const teacherId = teacherUser?.teacherId
           
           await updateApiClass(Number(cid), {
             name: targetClass.name,
@@ -404,7 +529,7 @@ export function ManageGrades() {
         targetClassId: Number(targetId)
       }))
 
-      const studentIds = candidates.map(s => s.userId || '').filter(Boolean)
+      const studentIds = candidates.map(s => s.studentId || s.userId || '').filter(Boolean)
 
       await batchPromoteStudents({
         sourceSchoolYearId: selectedSourceYearId,
@@ -460,7 +585,7 @@ export function ManageGrades() {
             throw new Error(`Target class ${targetClass.name} must have a homeroom teacher and room assigned.`);
           }
           const teacherUser = users.find(u => u.email === config.homeroomTeacher)
-          const teacherId = teacherUser?.userId
+          const teacherId = teacherUser?.teacherId
           
           await updateApiClass(Number(cid), {
             name: targetClass.name,
@@ -486,7 +611,7 @@ export function ManageGrades() {
           if (!studentsByTargetClass.has(targetId)) {
             studentsByTargetClass.set(targetId, [])
           }
-          studentsByTargetClass.get(targetId)!.push(s.userId || s.email)
+          studentsByTargetClass.get(targetId)!.push(s.studentId || s.userId || s.email)
         }
       })
 
@@ -511,7 +636,13 @@ export function ManageGrades() {
         enrolledNewHiresCount: candidates.length,
         targetYear: selectedTargetYear
       }))
-      push('success', `Enrolled ${candidates.length} new hire student(s) successfully.`)
+ 
+      if (selectedTargetYearId) {
+        await setSchoolYearCurrent(selectedTargetYearId)
+      }
+      await refreshData()
+ 
+      push('success', `Enrolled ${candidates.length} new hire student(s) successfully and set ${selectedTargetYear} as the current school year.`)
       setCurrentStep(6)
     } catch (err: any) {
       push('error', err?.message || 'Failed to enroll new hires.')
@@ -633,16 +764,18 @@ export function ManageGrades() {
             <div className="flex justify-end pt-4 border-t border-slate-100">
               <button
                 type="button"
-                onClick={() => {
-                  if (selectedSourceYear === selectedTargetYear) {
-                    push('error', 'Source year and Target year must be different.')
-                    return
-                  }
-                  setCurrentStep(2)
-                }}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-md px-6 py-2.5 cursor-pointer shadow-xs transition-all"
+                onClick={handleStartRollover}
+                disabled={isProcessing}
+                className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-semibold rounded-md px-6 py-2.5 cursor-pointer shadow-xs transition-all flex items-center gap-2"
               >
-                Start Rollover Workflow ➜
+                {isProcessing ? (
+                  <>
+                    <span className="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"></span>
+                    Initializing...
+                  </>
+                ) : (
+                  'Start Rollover Workflow ➜'
+                )}
               </button>
             </div>
           </div>
@@ -767,14 +900,16 @@ export function ManageGrades() {
               ) : (
                 sourceClassesG11.map(sc => {
                   const targetClassId = mappingsG11[sc.id] || ''
-                  const config = classConfigs[targetClassId] || { homeroomTeacher: '', room: '', studentLimit: 40 }
+                  const config = classConfigs[targetClassId] || { homeroomTeacher: '', room: '', studentLimit: 20 }
                   const availableTeachers = getAvailableTeachers(targetClassId)
                   const matchingClass = classes.find(c => c.id === targetClassId)
                   const allocatedCount = mappedCountsG11[targetClassId] ?? 0
+                  const currentClassCount = g11Candidates.filter(s => s.classId === sc.id).length
+                  const isLimitInvalid = targetClassId && config.studentLimit < currentClassCount
                   const isOver = allocatedCount > config.studentLimit
                   
                   return (
-                    <div key={sc.id} className={`border rounded-lg p-4 bg-slate-50/50 space-y-3 shadow-xs ${isOver ? 'border-rose-300 bg-rose-50/20' : 'border-slate-200'}`}>
+                    <div key={sc.id} className={`border rounded-lg p-4 bg-slate-50/50 space-y-3 shadow-xs ${isOver || isLimitInvalid ? 'border-rose-300 bg-rose-50/20' : 'border-slate-200'}`}>
                       <div className="flex justify-between items-center border-b border-slate-100 pb-2">
                         <h4 className="font-bold text-slate-800 text-sm">Source Class: {sc.name}</h4>
                         <div className="text-xs font-semibold">
@@ -797,7 +932,7 @@ export function ManageGrades() {
                           }}
                         >
                           <option value="">Select target class</option>
-                          {targetClassesG12.map(tc => (
+                          {getAvailableTargetClasses(targetClassesG12, sc.id, mappingsG11).map(tc => (
                             <option key={tc.id} value={tc.id}>{tc.name}</option>
                           ))}
                         </FormField>
@@ -828,6 +963,7 @@ export function ManageGrades() {
                         </FormField>
 
                         <FormField
+                          as="select"
                           label="Classroom Room"
                           name={`room-${sc.id}`}
                           value={config.room}
@@ -839,8 +975,15 @@ export function ManageGrades() {
                               [targetClassId]: { ...prev[targetClassId], room: val }
                             }))
                           }}
-                          placeholder="e.g. Room 301"
-                        />
+                        >
+                          <option value="">Select Room</option>
+                          {matchingClass?.room && (
+                            <option value={matchingClass.room}>{matchingClass.room} (Current)</option>
+                          )}
+                          {getAvailableRooms(targetClassId).map(r => (
+                            <option key={r} value={r}>{r}</option>
+                          ))}
+                        </FormField>
 
                         <FormField
                           type="number"
@@ -857,6 +1000,15 @@ export function ManageGrades() {
                           }}
                         />
                       </div>
+
+                      {targetClassId && config.studentLimit < currentClassCount && (
+                        <div className="bg-rose-50 border border-rose-200 text-rose-700 px-3 py-2 rounded-md text-xs font-semibold flex items-center gap-1.5 mt-1.5">
+                          <span>⚠️</span>
+                          <span>
+                            Warning: Student limit ({config.studentLimit}) is less than current class size ({currentClassCount} students).
+                          </span>
+                        </div>
+                      )}
                     </div>
                   )
                 })
@@ -983,14 +1135,16 @@ export function ManageGrades() {
               ) : (
                 sourceClassesG10.map(sc => {
                   const targetClassId = mappingsG10[sc.id] || ''
-                  const config = classConfigs[targetClassId] || { homeroomTeacher: '', room: '', studentLimit: 40 }
+                  const config = classConfigs[targetClassId] || { homeroomTeacher: '', room: '', studentLimit: 20 }
                   const availableTeachers = getAvailableTeachers(targetClassId)
                   const matchingClass = classes.find(c => c.id === targetClassId)
                   const allocatedCount = mappedCountsG10[targetClassId] ?? 0
+                  const currentClassCount = g10Candidates.filter(s => s.classId === sc.id).length
+                  const isLimitInvalid = targetClassId && config.studentLimit < currentClassCount
                   const isOver = allocatedCount > config.studentLimit
                   
                   return (
-                    <div key={sc.id} className={`border rounded-lg p-4 bg-slate-50/50 space-y-3 shadow-xs ${isOver ? 'border-rose-300 bg-rose-50/20' : 'border-slate-200'}`}>
+                    <div key={sc.id} className={`border rounded-lg p-4 bg-slate-50/50 space-y-3 shadow-xs ${isOver || isLimitInvalid ? 'border-rose-300 bg-rose-50/20' : 'border-slate-200'}`}>
                       <div className="flex justify-between items-center border-b border-slate-100 pb-2">
                         <h4 className="font-bold text-slate-800 text-sm">Source Class: {sc.name}</h4>
                         <div className="text-xs font-semibold">
@@ -1013,7 +1167,7 @@ export function ManageGrades() {
                           }}
                         >
                           <option value="">Select target class</option>
-                          {targetClassesG11.map(tc => (
+                          {getAvailableTargetClasses(targetClassesG11, sc.id, mappingsG10).map(tc => (
                             <option key={tc.id} value={tc.id}>{tc.name}</option>
                           ))}
                         </FormField>
@@ -1044,6 +1198,7 @@ export function ManageGrades() {
                         </FormField>
 
                         <FormField
+                          as="select"
                           label="Classroom Room"
                           name={`room-${sc.id}`}
                           value={config.room}
@@ -1055,8 +1210,15 @@ export function ManageGrades() {
                               [targetClassId]: { ...prev[targetClassId], room: val }
                             }))
                           }}
-                          placeholder="e.g. Room 201"
-                        />
+                        >
+                          <option value="">Select Room</option>
+                          {matchingClass?.room && (
+                            <option value={matchingClass.room}>{matchingClass.room} (Current)</option>
+                          )}
+                          {getAvailableRooms(targetClassId).map(r => (
+                            <option key={r} value={r}>{r}</option>
+                          ))}
+                        </FormField>
 
                         <FormField
                           type="number"
@@ -1073,6 +1235,15 @@ export function ManageGrades() {
                           }}
                         />
                       </div>
+
+                      {targetClassId && config.studentLimit < currentClassCount && (
+                        <div className="bg-rose-50 border border-rose-200 text-rose-700 px-3 py-2 rounded-md text-xs font-semibold flex items-center gap-1.5 mt-1.5">
+                          <span>⚠️</span>
+                          <span>
+                            Warning: Student limit ({config.studentLimit}) is less than current class size ({currentClassCount} students).
+                          </span>
+                        </div>
+                      )}
                     </div>
                   )
                 })
@@ -1198,7 +1369,7 @@ export function ManageGrades() {
                 <p className="text-sm text-slate-500">No target Grade 10 classes found in {selectedTargetYear}. Create them under the Classes tab first.</p>
               ) : (
                 targetClassesG10.map(tc => {
-                  const config = classConfigs[tc.id] || { homeroomTeacher: '', room: '', studentLimit: 40 }
+                  const config = classConfigs[tc.id] || { homeroomTeacher: '', room: '', studentLimit: 20 }
                   const availableTeachers = getAvailableTeachers(tc.id)
                   const allocatedCount = mappedCountsNewHires[tc.id] ?? 0
                   const isOver = allocatedCount > config.studentLimit
@@ -1240,6 +1411,7 @@ export function ManageGrades() {
                         </FormField>
 
                         <FormField
+                          as="select"
                           label="Classroom Room"
                           name={`room-${tc.id}`}
                           value={config.room}
@@ -1250,8 +1422,15 @@ export function ManageGrades() {
                               [tc.id]: { ...prev[tc.id], room: val }
                             }))
                           }}
-                          placeholder="e.g. Room 101"
-                        />
+                        >
+                          <option value="">Select Room</option>
+                          {tc.room && (
+                            <option value={tc.room}>{tc.room} (Current)</option>
+                          )}
+                          {getAvailableRooms(tc.id).map(r => (
+                            <option key={r} value={r}>{r}</option>
+                          ))}
+                        </FormField>
 
                         <FormField
                           type="number"
