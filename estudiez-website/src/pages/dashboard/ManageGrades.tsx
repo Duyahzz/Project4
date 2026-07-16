@@ -28,6 +28,7 @@ export function ManageGrades() {
   // Target year selected from a curated list (auto-suggested + existing DB years)
   const [selectedTargetYear, setSelectedTargetYear] = useState<string>('')
   const [selectedTargetYearId, setSelectedTargetYearId] = useState<number>(0)
+  const [cloneTimetableEnabled, setCloneTimetableEnabled] = useState<boolean>(true)
   
   // Mappings
   const [mappingsG11, setMappingsG11] = useState<Record<string, string>>({})
@@ -347,14 +348,18 @@ export function ManageGrades() {
       }
  
       // Clone weekly timetables and teaching assignments from corresponding classes
-      try {
-        const clonedSlotsCount = await cloneTimetableYear(selectedSourceYearId, targetYearId)
-        if (clonedSlotsCount > 0) {
-          push('success', `Copied ${clonedSlotsCount} weekly timetable schedules and teaching assignments from corresponding ${selectedSourceYear} classes.`)
+      if (cloneTimetableEnabled) {
+        try {
+          const clonedSlotsCount = await cloneTimetableYear(selectedSourceYearId, targetYearId)
+          if (clonedSlotsCount > 0) {
+            push('success', `Copied ${clonedSlotsCount} weekly timetable schedules and teaching assignments from corresponding ${selectedSourceYear} classes.`)
+          }
+        } catch (cloneErr: any) {
+          console.error('Failed to clone weekly timetables:', cloneErr)
+          push('info', 'Could not copy timetables automatically from the previous year.')
         }
-      } catch (cloneErr: any) {
-        console.error('Failed to clone weekly timetables:', cloneErr)
-        push('info', 'Could not copy timetables automatically from the previous year.')
+      } else {
+        push('info', 'Timetable cloning skipped. You can configure the weekly schedule manually.')
       }
  
       setCurrentStep(2)
@@ -758,6 +763,27 @@ export function ManageGrades() {
                   })()}
                 </select>
                 <p className="text-xs text-slate-400 mt-1">Select the year students will be promoted into</p>
+              </div>
+            </div>
+
+            <div className="flex items-start bg-slate-50 border border-slate-200 rounded-lg p-4 mt-4">
+              <div className="flex items-center h-5">
+                <input
+                  id="cloneTimetable"
+                  name="cloneTimetable"
+                  type="checkbox"
+                  className="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-slate-300 rounded cursor-pointer"
+                  checked={cloneTimetableEnabled}
+                  onChange={(e) => setCloneTimetableEnabled(e.target.checked)}
+                />
+              </div>
+              <div className="ml-3 text-sm">
+                <label htmlFor="cloneTimetable" className="font-semibold text-slate-700 cursor-pointer">
+                  Clone Weekly Timetable Schedules
+                </label>
+                <p className="text-slate-500 mt-0.5 text-xs">
+                  Automatically copy the weekly class timetable template and teaching assignments from {selectedSourceYear} to corresponding classes in {selectedTargetYear}.
+                </p>
               </div>
             </div>
 

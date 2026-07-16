@@ -824,107 +824,163 @@ INSERT INTO TeacherClassAssignments (TeacherId,ClassId,SubjectId,SchoolYearId) V
 (@tId04,@c11A2,@subPhy, @syId),(@tId05,@c11A2,@subChem,@syId),(@tId06,@c11A2,@subBio, @syId),
 (@tId07,@c11A2,@subHis, @syId),(@tId08,@c11A2,@subGeo, @syId),(@tId09,@c11A2,@subCs,  @syId),(@tId10,@c11A2,@subPe,@syId);
 
--- â”€â”€ 12. TIMETABLE (Mon-Fri x 5 periods x 4 classes = 100 slots) â”€â”€
+-- ── 12. TIMETABLE (Mon-Fri x 5 periods x 4 classes = 100 slots) ──
 -- DayOfWeek: 1=Mon 2=Tue 3=Wed 4=Thu 5=Fri
 -- Periods:   P1=07:30-08:15  P2=08:25-09:10  P3=09:20-10:05  P4=10:15-11:00  P5=11:10-11:55
--- 10A1: Mon/Wed/Fri: MATH LIT ENG PHY CHEM   |  Tue/Thu: BIO HIS GEO CS PE
--- 10A2: Mon/Wed/Fri: PHY MATH LIT ENG CS      |  Tue/Thu: CHEM BIO HIS GEO PE
--- 11A1: Mon/Wed/Fri: LIT MATH ENG PHY CS      |  Tue/Thu: CHEM BIO HIS GEO PE
--- 11A2: Mon/Wed/Fri: ENG LIT MATH PHY BIO     |  Tue/Thu: CHEM HIS GEO CS PE
+--
+-- CONFLICT-FREE LATIN-SQUARE ROTATION (shift +1 period per class):
+--
+-- Mon/Wed/Fri CORE (Math=T1, Lit=T2, Eng=T3, Phy=T4, PE=T10):
+--   10A1: P1=Math  P2=Lit   P3=Eng   P4=Phy   P5=PE
+--   10A2: P1=PE    P2=Math  P3=Lit   P4=Eng   P5=Phy
+--   11A1: P1=Phy   P2=PE    P3=Math  P4=Lit   P5=Eng
+--   11A2: P1=Eng   P2=Phy   P3=PE    P4=Math  P5=Lit
+-- => Each period has 4 DIFFERENT teachers (T1+T10+T4+T3, T2+T1+T10+T4, T3+T2+T1+T10, T4+T3+T2+T1, T10+T4+T3+T2)
+--
+-- Tue/Thu OTHER (Bio=T6, His=T7, Geo=T8, CS=T9, Chem=T5):
+--   10A1: P1=Bio   P2=His   P3=Geo   P4=CS    P5=Chem
+--   10A2: P1=Chem  P2=Bio   P3=His   P4=Geo   P5=CS
+--   11A1: P1=CS    P2=Chem  P3=Bio   P4=His   P5=Geo
+--   11A2: P1=Geo   P2=CS    P3=Chem  P4=Bio   P5=His
+-- => Each period has 4 DIFFERENT teachers (T6+T5+T9+T8, T7+T6+T5+T9, T8+T7+T6+T5, T9+T8+T7+T6, T5+T9+T8+T7)
+--
 DECLARE @eff DATE = '2025-09-05';
 INSERT INTO TimetableSlots (ClassId,SubjectId,TeacherId,SemesterId,DayOfWeek,PeriodNo,StartTime,EndTime,Room,EffectiveFrom) VALUES
--- 10A1 Mon
-(@c10A1,@subMath,@tId01,@sem1,1,1,'07:30','08:15',N'101',@eff),(@c10A1,@subLit, @tId02,@sem1,1,2,'08:25','09:10',N'101',@eff),
-(@c10A1,@subEng, @tId03,@sem1,1,3,'09:20','10:05',N'101',@eff),(@c10A1,@subPhy, @tId04,@sem1,1,4,'10:15','11:00',N'101',@eff),
-(@c10A1,@subChem,@tId05,@sem1,1,5,'11:10','11:55',N'101',@eff),
--- 10A1 Tue
-(@c10A1,@subBio, @tId06,@sem1,2,1,'07:30','08:15',N'101',@eff),(@c10A1,@subHis, @tId07,@sem1,2,2,'08:25','09:10',N'101',@eff),
-(@c10A1,@subGeo, @tId08,@sem1,2,3,'09:20','10:05',N'101',@eff),(@c10A1,@subCs,  @tId09,@sem1,2,4,'10:15','11:00',N'101',@eff),
-(@c10A1,@subPe,  @tId10,@sem1,2,5,'11:10','11:55',N'101',@eff),
--- 10A1 Wed
-(@c10A1,@subMath,@tId01,@sem1,3,1,'07:30','08:15',N'101',@eff),(@c10A1,@subLit, @tId02,@sem1,3,2,'08:25','09:10',N'101',@eff),
-(@c10A1,@subEng, @tId03,@sem1,3,3,'09:20','10:05',N'101',@eff),(@c10A1,@subPhy, @tId04,@sem1,3,4,'10:15','11:00',N'101',@eff),
-(@c10A1,@subChem,@tId05,@sem1,3,5,'11:10','11:55',N'101',@eff),
--- 10A1 Thu
-(@c10A1,@subBio, @tId06,@sem1,4,1,'07:30','08:15',N'101',@eff),(@c10A1,@subHis, @tId07,@sem1,4,2,'08:25','09:10',N'101',@eff),
-(@c10A1,@subGeo, @tId08,@sem1,4,3,'09:20','10:05',N'101',@eff),(@c10A1,@subCs,  @tId09,@sem1,4,4,'10:15','11:00',N'101',@eff),
-(@c10A1,@subPe,  @tId10,@sem1,4,5,'11:10','11:55',N'101',@eff),
--- 10A1 Fri
-(@c10A1,@subMath,@tId01,@sem1,5,1,'07:30','08:15',N'101',@eff),(@c10A1,@subLit, @tId02,@sem1,5,2,'08:25','09:10',N'101',@eff),
-(@c10A1,@subEng, @tId03,@sem1,5,3,'09:20','10:05',N'101',@eff),(@c10A1,@subPhy, @tId04,@sem1,5,4,'10:15','11:00',N'101',@eff),
-(@c10A1,@subChem,@tId05,@sem1,5,5,'11:10','11:55',N'101',@eff),
--- 10A2 Mon
-(@c10A2,@subPhy, @tId04,@sem1,1,1,'07:30','08:15',N'102',@eff),(@c10A2,@subMath,@tId01,@sem1,1,2,'08:25','09:10',N'102',@eff),
-(@c10A2,@subLit, @tId02,@sem1,1,3,'09:20','10:05',N'102',@eff),(@c10A2,@subEng, @tId03,@sem1,1,4,'10:15','11:00',N'102',@eff),
-(@c10A2,@subCs,  @tId09,@sem1,1,5,'11:10','11:55',N'102',@eff),
--- 10A2 Tue
-(@c10A2,@subChem,@tId05,@sem1,2,1,'07:30','08:15',N'102',@eff),(@c10A2,@subBio, @tId06,@sem1,2,2,'08:25','09:10',N'102',@eff),
-(@c10A2,@subHis, @tId07,@sem1,2,3,'09:20','10:05',N'102',@eff),(@c10A2,@subGeo, @tId08,@sem1,2,4,'10:15','11:00',N'102',@eff),
-(@c10A2,@subPe,  @tId10,@sem1,2,5,'11:10','11:55',N'102',@eff),
--- 10A2 Wed
-(@c10A2,@subPhy, @tId04,@sem1,3,1,'07:30','08:15',N'102',@eff),(@c10A2,@subMath,@tId01,@sem1,3,2,'08:25','09:10',N'102',@eff),
-(@c10A2,@subLit, @tId02,@sem1,3,3,'09:20','10:05',N'102',@eff),(@c10A2,@subEng, @tId03,@sem1,3,4,'10:15','11:00',N'102',@eff),
-(@c10A2,@subCs,  @tId09,@sem1,3,5,'11:10','11:55',N'102',@eff),
--- 10A2 Thu
-(@c10A2,@subChem,@tId05,@sem1,4,1,'07:30','08:15',N'102',@eff),(@c10A2,@subBio, @tId06,@sem1,4,2,'08:25','09:10',N'102',@eff),
-(@c10A2,@subHis, @tId07,@sem1,4,3,'09:20','10:05',N'102',@eff),(@c10A2,@subGeo, @tId08,@sem1,4,4,'10:15','11:00',N'102',@eff),
-(@c10A2,@subPe,  @tId10,@sem1,4,5,'11:10','11:55',N'102',@eff),
--- 10A2 Fri
-(@c10A2,@subPhy, @tId04,@sem1,5,1,'07:30','08:15',N'102',@eff),(@c10A2,@subMath,@tId01,@sem1,5,2,'08:25','09:10',N'102',@eff),
-(@c10A2,@subLit, @tId02,@sem1,5,3,'09:20','10:05',N'102',@eff),(@c10A2,@subEng, @tId03,@sem1,5,4,'10:15','11:00',N'102',@eff),
-(@c10A2,@subCs,  @tId09,@sem1,5,5,'11:10','11:55',N'102',@eff),
--- 11A1 Mon
-(@c11A1,@subLit, @tId02,@sem1,1,1,'07:30','08:15',N'201',@eff),(@c11A1,@subMath,@tId01,@sem1,1,2,'08:25','09:10',N'201',@eff),
-(@c11A1,@subEng, @tId03,@sem1,1,3,'09:20','10:05',N'201',@eff),(@c11A1,@subPhy, @tId04,@sem1,1,4,'10:15','11:00',N'201',@eff),
-(@c11A1,@subCs,  @tId09,@sem1,1,5,'11:10','11:55',N'201',@eff),
--- 11A1 Tue
-(@c11A1,@subChem,@tId05,@sem1,2,1,'07:30','08:15',N'201',@eff),(@c11A1,@subBio, @tId06,@sem1,2,2,'08:25','09:10',N'201',@eff),
-(@c11A1,@subHis, @tId07,@sem1,2,3,'09:20','10:05',N'201',@eff),(@c11A1,@subGeo, @tId08,@sem1,2,4,'10:15','11:00',N'201',@eff),
-(@c11A1,@subPe,  @tId10,@sem1,2,5,'11:10','11:55',N'201',@eff),
--- 11A1 Wed
-(@c11A1,@subLit, @tId02,@sem1,3,1,'07:30','08:15',N'201',@eff),(@c11A1,@subMath,@tId01,@sem1,3,2,'08:25','09:10',N'201',@eff),
-(@c11A1,@subEng, @tId03,@sem1,3,3,'09:20','10:05',N'201',@eff),(@c11A1,@subPhy, @tId04,@sem1,3,4,'10:15','11:00',N'201',@eff),
-(@c11A1,@subCs,  @tId09,@sem1,3,5,'11:10','11:55',N'201',@eff),
--- 11A1 Thu
-(@c11A1,@subChem,@tId05,@sem1,4,1,'07:30','08:15',N'201',@eff),(@c11A1,@subBio, @tId06,@sem1,4,2,'08:25','09:10',N'201',@eff),
-(@c11A1,@subHis, @tId07,@sem1,4,3,'09:20','10:05',N'201',@eff),(@c11A1,@subGeo, @tId08,@sem1,4,4,'10:15','11:00',N'201',@eff),
-(@c11A1,@subPe,  @tId10,@sem1,4,5,'11:10','11:55',N'201',@eff),
--- 11A1 Fri
-(@c11A1,@subLit, @tId02,@sem1,5,1,'07:30','08:15',N'201',@eff),(@c11A1,@subMath,@tId01,@sem1,5,2,'08:25','09:10',N'201',@eff),
-(@c11A1,@subEng, @tId03,@sem1,5,3,'09:20','10:05',N'201',@eff),(@c11A1,@subPhy, @tId04,@sem1,5,4,'10:15','11:00',N'201',@eff),
-(@c11A1,@subCs,  @tId09,@sem1,5,5,'11:10','11:55',N'201',@eff),
--- 11A2 Mon
-(@c11A2,@subEng, @tId03,@sem1,1,1,'07:30','08:15',N'202',@eff),(@c11A2,@subLit, @tId02,@sem1,1,2,'08:25','09:10',N'202',@eff),
-(@c11A2,@subMath,@tId01,@sem1,1,3,'09:20','10:05',N'202',@eff),(@c11A2,@subPhy, @tId04,@sem1,1,4,'10:15','11:00',N'202',@eff),
-(@c11A2,@subBio, @tId06,@sem1,1,5,'11:10','11:55',N'202',@eff),
--- 11A2 Tue
-(@c11A2,@subChem,@tId05,@sem1,2,1,'07:30','08:15',N'202',@eff),(@c11A2,@subHis, @tId07,@sem1,2,2,'08:25','09:10',N'202',@eff),
-(@c11A2,@subGeo, @tId08,@sem1,2,3,'09:20','10:05',N'202',@eff),(@c11A2,@subCs,  @tId09,@sem1,2,4,'10:15','11:00',N'202',@eff),
-(@c11A2,@subPe,  @tId10,@sem1,2,5,'11:10','11:55',N'202',@eff),
--- 11A2 Wed
-(@c11A2,@subEng, @tId03,@sem1,3,1,'07:30','08:15',N'202',@eff),(@c11A2,@subLit, @tId02,@sem1,3,2,'08:25','09:10',N'202',@eff),
-(@c11A2,@subMath,@tId01,@sem1,3,3,'09:20','10:05',N'202',@eff),(@c11A2,@subPhy, @tId04,@sem1,3,4,'10:15','11:00',N'202',@eff),
-(@c11A2,@subBio, @tId06,@sem1,3,5,'11:10','11:55',N'202',@eff),
--- 11A2 Thu
-(@c11A2,@subChem,@tId05,@sem1,4,1,'07:30','08:15',N'202',@eff),(@c11A2,@subHis, @tId07,@sem1,4,2,'08:25','09:10',N'202',@eff),
-(@c11A2,@subGeo, @tId08,@sem1,4,3,'09:20','10:05',N'202',@eff),(@c11A2,@subCs,  @tId09,@sem1,4,4,'10:15','11:00',N'202',@eff),
-(@c11A2,@subPe,  @tId10,@sem1,4,5,'11:10','11:55',N'202',@eff),
--- 11A2 Fri
-(@c11A2,@subEng, @tId03,@sem1,5,1,'07:30','08:15',N'202',@eff),(@c11A2,@subLit, @tId02,@sem1,5,2,'08:25','09:10',N'202',@eff),
-(@c11A2,@subMath,@tId01,@sem1,5,3,'09:20','10:05',N'202',@eff),(@c11A2,@subPhy, @tId04,@sem1,5,4,'10:15','11:00',N'202',@eff),
-(@c11A2,@subBio, @tId06,@sem1,5,5,'11:10','11:55',N'202',@eff);
+-- 10A1 Monday (P1=Math, P2=Lit, P3=Eng, P4=Phy, P5=PE)
+(@c10A1,@subMath,@tId01,@sem1,1,1,'07:30','08:15',N'101',@eff),
+(@c10A1,@subLit, @tId02,@sem1,1,2,'08:25','09:10',N'101',@eff),
+(@c10A1,@subEng, @tId03,@sem1,1,3,'09:20','10:05',N'101',@eff),
+(@c10A1,@subPhy, @tId04,@sem1,1,4,'10:15','11:00',N'101',@eff),
+(@c10A1,@subPe,  @tId10,@sem1,1,5,'11:10','11:55',N'GYM',@eff),
+-- 10A1 Tuesday (P1=Bio, P2=His, P3=Geo, P4=CS, P5=Chem)
+(@c10A1,@subBio, @tId06,@sem1,2,1,'07:30','08:15',N'101',@eff),
+(@c10A1,@subHis, @tId07,@sem1,2,2,'08:25','09:10',N'101',@eff),
+(@c10A1,@subGeo, @tId08,@sem1,2,3,'09:20','10:05',N'101',@eff),
+(@c10A1,@subCs,  @tId09,@sem1,2,4,'10:15','11:00',N'LAB1',@eff),
+(@c10A1,@subChem,@tId05,@sem1,2,5,'11:10','11:55',N'LAB2',@eff),
+-- 10A1 Wednesday (same as Monday)
+(@c10A1,@subMath,@tId01,@sem1,3,1,'07:30','08:15',N'101',@eff),
+(@c10A1,@subLit, @tId02,@sem1,3,2,'08:25','09:10',N'101',@eff),
+(@c10A1,@subEng, @tId03,@sem1,3,3,'09:20','10:05',N'101',@eff),
+(@c10A1,@subPhy, @tId04,@sem1,3,4,'10:15','11:00',N'101',@eff),
+(@c10A1,@subPe,  @tId10,@sem1,3,5,'11:10','11:55',N'GYM',@eff),
+-- 10A1 Thursday (same as Tuesday)
+(@c10A1,@subBio, @tId06,@sem1,4,1,'07:30','08:15',N'101',@eff),
+(@c10A1,@subHis, @tId07,@sem1,4,2,'08:25','09:10',N'101',@eff),
+(@c10A1,@subGeo, @tId08,@sem1,4,3,'09:20','10:05',N'101',@eff),
+(@c10A1,@subCs,  @tId09,@sem1,4,4,'10:15','11:00',N'LAB1',@eff),
+(@c10A1,@subChem,@tId05,@sem1,4,5,'11:10','11:55',N'LAB2',@eff),
+-- 10A1 Friday (same as Monday)
+(@c10A1,@subMath,@tId01,@sem1,5,1,'07:30','08:15',N'101',@eff),
+(@c10A1,@subLit, @tId02,@sem1,5,2,'08:25','09:10',N'101',@eff),
+(@c10A1,@subEng, @tId03,@sem1,5,3,'09:20','10:05',N'101',@eff),
+(@c10A1,@subPhy, @tId04,@sem1,5,4,'10:15','11:00',N'101',@eff),
+(@c10A1,@subPe,  @tId10,@sem1,5,5,'11:10','11:55',N'GYM',@eff),
+
+-- 10A2 Monday (P1=PE, P2=Math, P3=Lit, P4=Eng, P5=Phy)
+(@c10A2,@subPe,  @tId10,@sem1,1,1,'07:30','08:15',N'GYM',@eff),
+(@c10A2,@subMath,@tId01,@sem1,1,2,'08:25','09:10',N'102',@eff),
+(@c10A2,@subLit, @tId02,@sem1,1,3,'09:20','10:05',N'102',@eff),
+(@c10A2,@subEng, @tId03,@sem1,1,4,'10:15','11:00',N'102',@eff),
+(@c10A2,@subPhy, @tId04,@sem1,1,5,'11:10','11:55',N'102',@eff),
+-- 10A2 Tuesday (P1=Chem, P2=Bio, P3=His, P4=Geo, P5=CS)
+(@c10A2,@subChem,@tId05,@sem1,2,1,'07:30','08:15',N'LAB2',@eff),
+(@c10A2,@subBio, @tId06,@sem1,2,2,'08:25','09:10',N'102',@eff),
+(@c10A2,@subHis, @tId07,@sem1,2,3,'09:20','10:05',N'102',@eff),
+(@c10A2,@subGeo, @tId08,@sem1,2,4,'10:15','11:00',N'102',@eff),
+(@c10A2,@subCs,  @tId09,@sem1,2,5,'11:10','11:55',N'LAB1',@eff),
+-- 10A2 Wednesday (same as Monday)
+(@c10A2,@subPe,  @tId10,@sem1,3,1,'07:30','08:15',N'GYM',@eff),
+(@c10A2,@subMath,@tId01,@sem1,3,2,'08:25','09:10',N'102',@eff),
+(@c10A2,@subLit, @tId02,@sem1,3,3,'09:20','10:05',N'102',@eff),
+(@c10A2,@subEng, @tId03,@sem1,3,4,'10:15','11:00',N'102',@eff),
+(@c10A2,@subPhy, @tId04,@sem1,3,5,'11:10','11:55',N'102',@eff),
+-- 10A2 Thursday (same as Tuesday)
+(@c10A2,@subChem,@tId05,@sem1,4,1,'07:30','08:15',N'LAB2',@eff),
+(@c10A2,@subBio, @tId06,@sem1,4,2,'08:25','09:10',N'102',@eff),
+(@c10A2,@subHis, @tId07,@sem1,4,3,'09:20','10:05',N'102',@eff),
+(@c10A2,@subGeo, @tId08,@sem1,4,4,'10:15','11:00',N'102',@eff),
+(@c10A2,@subCs,  @tId09,@sem1,4,5,'11:10','11:55',N'LAB1',@eff),
+-- 10A2 Friday (same as Monday)
+(@c10A2,@subPe,  @tId10,@sem1,5,1,'07:30','08:15',N'GYM',@eff),
+(@c10A2,@subMath,@tId01,@sem1,5,2,'08:25','09:10',N'102',@eff),
+(@c10A2,@subLit, @tId02,@sem1,5,3,'09:20','10:05',N'102',@eff),
+(@c10A2,@subEng, @tId03,@sem1,5,4,'10:15','11:00',N'102',@eff),
+(@c10A2,@subPhy, @tId04,@sem1,5,5,'11:10','11:55',N'102',@eff),
+
+-- 11A1 Monday (P1=Phy, P2=PE, P3=Math, P4=Lit, P5=Eng)
+(@c11A1,@subPhy, @tId04,@sem1,1,1,'07:30','08:15',N'201',@eff),
+(@c11A1,@subPe,  @tId10,@sem1,1,2,'08:25','09:10',N'GYM',@eff),
+(@c11A1,@subMath,@tId01,@sem1,1,3,'09:20','10:05',N'201',@eff),
+(@c11A1,@subLit, @tId02,@sem1,1,4,'10:15','11:00',N'201',@eff),
+(@c11A1,@subEng, @tId03,@sem1,1,5,'11:10','11:55',N'201',@eff),
+-- 11A1 Tuesday (P1=CS, P2=Chem, P3=Bio, P4=His, P5=Geo)
+(@c11A1,@subCs,  @tId09,@sem1,2,1,'07:30','08:15',N'LAB1',@eff),
+(@c11A1,@subChem,@tId05,@sem1,2,2,'08:25','09:10',N'LAB2',@eff),
+(@c11A1,@subBio, @tId06,@sem1,2,3,'09:20','10:05',N'201',@eff),
+(@c11A1,@subHis, @tId07,@sem1,2,4,'10:15','11:00',N'201',@eff),
+(@c11A1,@subGeo, @tId08,@sem1,2,5,'11:10','11:55',N'201',@eff),
+-- 11A1 Wednesday (same as Monday)
+(@c11A1,@subPhy, @tId04,@sem1,3,1,'07:30','08:15',N'201',@eff),
+(@c11A1,@subPe,  @tId10,@sem1,3,2,'08:25','09:10',N'GYM',@eff),
+(@c11A1,@subMath,@tId01,@sem1,3,3,'09:20','10:05',N'201',@eff),
+(@c11A1,@subLit, @tId02,@sem1,3,4,'10:15','11:00',N'201',@eff),
+(@c11A1,@subEng, @tId03,@sem1,3,5,'11:10','11:55',N'201',@eff),
+-- 11A1 Thursday (same as Tuesday)
+(@c11A1,@subCs,  @tId09,@sem1,4,1,'07:30','08:15',N'LAB1',@eff),
+(@c11A1,@subChem,@tId05,@sem1,4,2,'08:25','09:10',N'LAB2',@eff),
+(@c11A1,@subBio, @tId06,@sem1,4,3,'09:20','10:05',N'201',@eff),
+(@c11A1,@subHis, @tId07,@sem1,4,4,'10:15','11:00',N'201',@eff),
+(@c11A1,@subGeo, @tId08,@sem1,4,5,'11:10','11:55',N'201',@eff),
+-- 11A1 Friday (same as Monday)
+(@c11A1,@subPhy, @tId04,@sem1,5,1,'07:30','08:15',N'201',@eff),
+(@c11A1,@subPe,  @tId10,@sem1,5,2,'08:25','09:10',N'GYM',@eff),
+(@c11A1,@subMath,@tId01,@sem1,5,3,'09:20','10:05',N'201',@eff),
+(@c11A1,@subLit, @tId02,@sem1,5,4,'10:15','11:00',N'201',@eff),
+(@c11A1,@subEng, @tId03,@sem1,5,5,'11:10','11:55',N'201',@eff),
+
+-- 11A2 Monday (P1=Eng, P2=Phy, P3=PE, P4=Math, P5=Lit)
+(@c11A2,@subEng, @tId03,@sem1,1,1,'07:30','08:15',N'202',@eff),
+(@c11A2,@subPhy, @tId04,@sem1,1,2,'08:25','09:10',N'202',@eff),
+(@c11A2,@subPe,  @tId10,@sem1,1,3,'09:20','10:05',N'GYM',@eff),
+(@c11A2,@subMath,@tId01,@sem1,1,4,'10:15','11:00',N'202',@eff),
+(@c11A2,@subLit, @tId02,@sem1,1,5,'11:10','11:55',N'202',@eff),
+-- 11A2 Tuesday (P1=Geo, P2=CS, P3=Chem, P4=Bio, P5=His)
+(@c11A2,@subGeo, @tId08,@sem1,2,1,'07:30','08:15',N'202',@eff),
+(@c11A2,@subCs,  @tId09,@sem1,2,2,'08:25','09:10',N'LAB1',@eff),
+(@c11A2,@subChem,@tId05,@sem1,2,3,'09:20','10:05',N'LAB2',@eff),
+(@c11A2,@subBio, @tId06,@sem1,2,4,'10:15','11:00',N'202',@eff),
+(@c11A2,@subHis, @tId07,@sem1,2,5,'11:10','11:55',N'202',@eff),
+-- 11A2 Wednesday (same as Monday)
+(@c11A2,@subEng, @tId03,@sem1,3,1,'07:30','08:15',N'202',@eff),
+(@c11A2,@subPhy, @tId04,@sem1,3,2,'08:25','09:10',N'202',@eff),
+(@c11A2,@subPe,  @tId10,@sem1,3,3,'09:20','10:05',N'GYM',@eff),
+(@c11A2,@subMath,@tId01,@sem1,3,4,'10:15','11:00',N'202',@eff),
+(@c11A2,@subLit, @tId02,@sem1,3,5,'11:10','11:55',N'202',@eff),
+-- 11A2 Thursday (same as Tuesday)
+(@c11A2,@subGeo, @tId08,@sem1,4,1,'07:30','08:15',N'202',@eff),
+(@c11A2,@subCs,  @tId09,@sem1,4,2,'08:25','09:10',N'LAB1',@eff),
+(@c11A2,@subChem,@tId05,@sem1,4,3,'09:20','10:05',N'LAB2',@eff),
+(@c11A2,@subBio, @tId06,@sem1,4,4,'10:15','11:00',N'202',@eff),
+(@c11A2,@subHis, @tId07,@sem1,4,5,'11:10','11:55',N'202',@eff),
+-- 11A2 Friday (same as Monday)
+(@c11A2,@subEng, @tId03,@sem1,5,1,'07:30','08:15',N'202',@eff),
+(@c11A2,@subPhy, @tId04,@sem1,5,2,'08:25','09:10',N'202',@eff),
+(@c11A2,@subPe,  @tId10,@sem1,5,3,'09:20','10:05',N'GYM',@eff),
+(@c11A2,@subMath,@tId01,@sem1,5,4,'10:15','11:00',N'202',@eff),
+(@c11A2,@subLit, @tId02,@sem1,5,5,'11:10','11:55',N'202',@eff);
 
 -- â”€â”€ 12b. LESSON SESSIONS (Week of June 8-12, 2026) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 -- Generate actual class sessions from timetable for attendance tracking
 -- June 8 = Mon (DayOfWeek=1), June 9 = Tue (DayOfWeek=2), etc.
 
--- 10A1: Mon Jun 8 (MATH, LIT, ENG, PHY, CHEM)
+-- 10A1: Mon Jun 8 (MATH, LIT, ENG, PHY, PE) - matches new timetable
 INSERT INTO LessonSessions (ClassId,SubjectId,TeacherId,SessionDate,PeriodNo,Room,Topic,Status) VALUES
 (@c10A1,@subMath,@tId01,'2026-06-08',1,N'101',N'Quadratic equations review',N'COMPLETED'),
 (@c10A1,@subLit, @tId02,'2026-06-08',2,N'101',N'Poetry analysis',N'COMPLETED'),
 (@c10A1,@subEng, @tId03,'2026-06-08',3,N'101',N'Grammar exercises',N'COMPLETED'),
 (@c10A1,@subPhy, @tId04,'2026-06-08',4,N'101',N'Newton laws problems',N'COMPLETED'),
-(@c10A1,@subChem,@tId05,'2026-06-08',5,N'101',N'Organic compounds',N'COMPLETED');
+(@c10A1,@subPe,  @tId10,'2026-06-08',5,N'GYM',N'Morning run warm-up',N'COMPLETED');
 DECLARE @ls01 INT = SCOPE_IDENTITY() - 4;
 DECLARE @ls02 INT = @ls01 + 1;
 DECLARE @ls03 INT = @ls01 + 2;
@@ -944,13 +1000,13 @@ DECLARE @ls08 INT = @ls06 + 2;
 DECLARE @ls09 INT = @ls06 + 3;
 DECLARE @ls10 INT = @ls06 + 4;
 
--- 10A1: Wed Jun 10 (MATH, LIT, ENG, PHY, CHEM)
+-- 10A1: Wed Jun 10 (MATH, LIT, ENG, PHY, PE) - matches new timetable
 INSERT INTO LessonSessions (ClassId,SubjectId,TeacherId,SessionDate,PeriodNo,Room,Topic,Status) VALUES
 (@c10A1,@subMath,@tId01,'2026-06-10',1,N'101',N'Polynomial functions',N'COMPLETED'),
 (@c10A1,@subLit, @tId02,'2026-06-10',2,N'101',N'Essay writing',N'COMPLETED'),
 (@c10A1,@subEng, @tId03,'2026-06-10',3,N'101',N'Reading comprehension',N'COMPLETED'),
 (@c10A1,@subPhy, @tId04,'2026-06-10',4,N'101',N'Energy conservation',N'COMPLETED'),
-(@c10A1,@subChem,@tId05,'2026-06-10',5,N'101',N'Acids and bases',N'COMPLETED');
+(@c10A1,@subPe,  @tId10,'2026-06-10',5,N'GYM',N'Fitness exercises',N'COMPLETED');
 DECLARE @ls11 INT = SCOPE_IDENTITY() - 4;
 
 -- 10A1: Thu Jun 11 (BIO, HIS, GEO, CS, PE)
@@ -962,13 +1018,13 @@ INSERT INTO LessonSessions (ClassId,SubjectId,TeacherId,SessionDate,PeriodNo,Roo
 (@c10A1,@subPe,  @tId10,'2026-06-11',5,N'GYM',N'Volleyball',N'COMPLETED');
 DECLARE @ls16 INT = SCOPE_IDENTITY() - 4;
 
--- 10A1: Fri Jun 12 (MATH, LIT, ENG, PHY, CHEM)
+-- 10A1: Fri Jun 12 (MATH, LIT, ENG, PHY, PE) - matches new timetable
 INSERT INTO LessonSessions (ClassId,SubjectId,TeacherId,SessionDate,PeriodNo,Room,Topic,Status) VALUES
 (@c10A1,@subMath,@tId01,'2026-06-12',1,N'101',N'Trigonometry',N'COMPLETED'),
 (@c10A1,@subLit, @tId02,'2026-06-12',2,N'101',N'Novel discussion',N'COMPLETED'),
 (@c10A1,@subEng, @tId03,'2026-06-12',3,N'101',N'Vocabulary quiz',N'COMPLETED'),
 (@c10A1,@subPhy, @tId04,'2026-06-12',4,N'101',N'Wave mechanics',N'COMPLETED'),
-(@c10A1,@subChem,@tId05,'2026-06-12',5,N'101',N'Lab experiment',N'COMPLETED');
+(@c10A1,@subPe,  @tId10,'2026-06-12',5,N'GYM',N'Relay race',N'COMPLETED');
 DECLARE @ls21 INT = SCOPE_IDENTITY() - 4;
 
 -- â”€â”€ 12c. ATTENDANCE RECORDS (for 10A1 students, week of Jun 8-12) â”€â”€
@@ -981,7 +1037,7 @@ INSERT INTO AttendanceRecords (LessonSessionId,StudentId,Status,RecordedBy) VALU
 (@ls02,@sId01,N'PRESENT',@uT02),(@ls02,@sId02,N'PRESENT',@uT02),(@ls02,@sId03,N'PRESENT',@uT02),(@ls02,@sId04,N'ABSENT',@uT02),
 (@ls03,@sId01,N'PRESENT',@uT03),(@ls03,@sId02,N'LATE',@uT03),(@ls03,@sId03,N'PRESENT',@uT03),(@ls03,@sId04,N'PRESENT',@uT03),
 (@ls04,@sId01,N'PRESENT',@uT04),(@ls04,@sId02,N'PRESENT',@uT04),(@ls04,@sId03,N'PRESENT',@uT04),(@ls04,@sId04,N'PRESENT',@uT04),
-(@ls05,@sId01,N'PRESENT',@uT05),(@ls05,@sId02,N'PRESENT',@uT05),(@ls05,@sId03,N'EXCUSED',@uT05),(@ls05,@sId04,N'PRESENT',@uT05);
+(@ls05,@sId01,N'PRESENT',@uT10),(@ls05,@sId02,N'PRESENT',@uT10),(@ls05,@sId03,N'EXCUSED',@uT10),(@ls05,@sId04,N'PRESENT',@uT10);
 
 -- Tue Jun 9 attendance
 INSERT INTO AttendanceRecords (LessonSessionId,StudentId,Status,RecordedBy) VALUES
@@ -997,7 +1053,7 @@ INSERT INTO AttendanceRecords (LessonSessionId,StudentId,Status,RecordedBy) VALU
 (@ls11+1,@sId01,N'PRESENT',@uT02),(@ls11+1,@sId02,N'LATE',@uT02),(@ls11+1,@sId03,N'PRESENT',@uT02),(@ls11+1,@sId04,N'PRESENT',@uT02),
 (@ls11+2,@sId01,N'PRESENT',@uT03),(@ls11+2,@sId02,N'PRESENT',@uT03),(@ls11+2,@sId03,N'PRESENT',@uT03),(@ls11+2,@sId04,N'PRESENT',@uT03),
 (@ls11+3,@sId01,N'LATE',@uT04),(@ls11+3,@sId02,N'PRESENT',@uT04),(@ls11+3,@sId03,N'PRESENT',@uT04),(@ls11+3,@sId04,N'PRESENT',@uT04),
-(@ls11+4,@sId01,N'PRESENT',@uT05),(@ls11+4,@sId02,N'PRESENT',@uT05),(@ls11+4,@sId03,N'PRESENT',@uT05),(@ls11+4,@sId04,N'EXCUSED',@uT05);
+(@ls11+4,@sId01,N'PRESENT',@uT10),(@ls11+4,@sId02,N'PRESENT',@uT10),(@ls11+4,@sId03,N'PRESENT',@uT10),(@ls11+4,@sId04,N'EXCUSED',@uT10);
 
 -- Thu Jun 11 attendance
 INSERT INTO AttendanceRecords (LessonSessionId,StudentId,Status,RecordedBy) VALUES
@@ -1013,18 +1069,18 @@ INSERT INTO AttendanceRecords (LessonSessionId,StudentId,Status,RecordedBy) VALU
 (@ls21+1,@sId01,N'PRESENT',@uT02),(@ls21+1,@sId02,N'PRESENT',@uT02),(@ls21+1,@sId03,N'PRESENT',@uT02),(@ls21+1,@sId04,N'ABSENT',@uT02),
 (@ls21+2,@sId01,N'PRESENT',@uT03),(@ls21+2,@sId02,N'PRESENT',@uT03),(@ls21+2,@sId03,N'LATE',@uT03),(@ls21+2,@sId04,N'PRESENT',@uT03),
 (@ls21+3,@sId01,N'PRESENT',@uT04),(@ls21+3,@sId02,N'PRESENT',@uT04),(@ls21+3,@sId03,N'PRESENT',@uT04),(@ls21+3,@sId04,N'PRESENT',@uT04),
-(@ls21+4,@sId01,N'PRESENT',@uT05),(@ls21+4,@sId02,N'EXCUSED',@uT05),(@ls21+4,@sId03,N'PRESENT',@uT05),(@ls21+4,@sId04,N'PRESENT',@uT05);
+(@ls21+4,@sId01,N'PRESENT',@uT10),(@ls21+4,@sId02,N'EXCUSED',@uT10),(@ls21+4,@sId03,N'PRESENT',@uT10),(@ls21+4,@sId04,N'PRESENT',@uT10);
 
 -- â”€â”€ 12d. CURRENT WEEK SESSIONS (June 15-19, 2026) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 -- Today is June 16 (Tue). Mon=completed, Tue=in-progress, Wed-Fri=scheduled
 
--- 10A1: Mon Jun 15 (MATH, LIT, ENG, PHY, CHEM) - all completed
+-- 10A1: Mon Jun 15 (MATH, LIT, ENG, PHY, PE) - matches new timetable, all completed
 INSERT INTO LessonSessions (ClassId,SubjectId,TeacherId,SessionDate,PeriodNo,Room,Topic,Status) VALUES
 (@c10A1,@subMath,@tId01,'2026-06-15',1,N'101',N'Final review - algebra',N'COMPLETED'),
 (@c10A1,@subLit, @tId02,'2026-06-15',2,N'101',N'Final review - essays',N'COMPLETED'),
 (@c10A1,@subEng, @tId03,'2026-06-15',3,N'101',N'Final review - grammar',N'COMPLETED'),
 (@c10A1,@subPhy, @tId04,'2026-06-15',4,N'101',N'Final review - mechanics',N'COMPLETED'),
-(@c10A1,@subChem,@tId05,'2026-06-15',5,N'101',N'Final review - reactions',N'COMPLETED');
+(@c10A1,@subPe,  @tId10,'2026-06-15',5,N'GYM',N'Cool-down stretching',N'COMPLETED');
 DECLARE @lsW2_01 INT = SCOPE_IDENTITY() - 4;
 
 -- 10A1: Tue Jun 16 (BIO, HIS, GEO, CS, PE) - today, partial completed
@@ -1036,13 +1092,13 @@ INSERT INTO LessonSessions (ClassId,SubjectId,TeacherId,SessionDate,PeriodNo,Roo
 (@c10A1,@subPe,  @tId10,'2026-06-16',5,N'GYM',N'Sports day prep',N'SCHEDULED');
 DECLARE @lsW2_06 INT = SCOPE_IDENTITY() - 4;
 
--- 10A1: Wed Jun 17 (MATH, LIT, ENG, PHY, CHEM) - scheduled
+-- 10A1: Wed Jun 17 (MATH, LIT, ENG, PHY, PE) - matches new timetable, scheduled
 INSERT INTO LessonSessions (ClassId,SubjectId,TeacherId,SessionDate,PeriodNo,Room,Topic,Status) VALUES
 (@c10A1,@subMath,@tId01,'2026-06-17',1,N'101',N'Semester exam prep',N'SCHEDULED'),
 (@c10A1,@subLit, @tId02,'2026-06-17',2,N'101',N'Semester exam prep',N'SCHEDULED'),
 (@c10A1,@subEng, @tId03,'2026-06-17',3,N'101',N'Semester exam prep',N'SCHEDULED'),
 (@c10A1,@subPhy, @tId04,'2026-06-17',4,N'101',N'Semester exam prep',N'SCHEDULED'),
-(@c10A1,@subChem,@tId05,'2026-06-17',5,N'101',N'Semester exam prep',N'SCHEDULED');
+(@c10A1,@subPe,  @tId10,'2026-06-17',5,N'GYM',N'Semester exam prep',N'SCHEDULED');
 
 -- 10A1: Thu Jun 18 (BIO, HIS, GEO, CS, PE) - scheduled
 INSERT INTO LessonSessions (ClassId,SubjectId,TeacherId,SessionDate,PeriodNo,Room,Topic,Status) VALUES
@@ -1052,13 +1108,13 @@ INSERT INTO LessonSessions (ClassId,SubjectId,TeacherId,SessionDate,PeriodNo,Roo
 (@c10A1,@subCs,  @tId09,'2026-06-18',4,N'101',N'Semester exam prep',N'SCHEDULED'),
 (@c10A1,@subPe,  @tId10,'2026-06-18',5,N'GYM',N'Sports day',N'SCHEDULED');
 
--- 10A1: Fri Jun 19 (MATH, LIT, ENG, PHY, CHEM) - scheduled
+-- 10A1: Fri Jun 19 (MATH, LIT, ENG, PHY, PE) - matches new timetable, scheduled
 INSERT INTO LessonSessions (ClassId,SubjectId,TeacherId,SessionDate,PeriodNo,Room,Topic,Status) VALUES
 (@c10A1,@subMath,@tId01,'2026-06-19',1,N'101',N'Last day review',N'SCHEDULED'),
 (@c10A1,@subLit, @tId02,'2026-06-19',2,N'101',N'Last day review',N'SCHEDULED'),
 (@c10A1,@subEng, @tId03,'2026-06-19',3,N'101',N'Last day review',N'SCHEDULED'),
 (@c10A1,@subPhy, @tId04,'2026-06-19',4,N'101',N'Last day review',N'SCHEDULED'),
-(@c10A1,@subChem,@tId05,'2026-06-19',5,N'101',N'Last day review',N'SCHEDULED');
+(@c10A1,@subPe,  @tId10,'2026-06-19',5,N'GYM',N'End of semester activities',N'SCHEDULED');
 
 -- Attendance for Jun 15 (Mon) - completed
 INSERT INTO AttendanceRecords (LessonSessionId,StudentId,Status,RecordedBy) VALUES
@@ -1066,7 +1122,7 @@ INSERT INTO AttendanceRecords (LessonSessionId,StudentId,Status,RecordedBy) VALU
 (@lsW2_01+1,@sId01,N'PRESENT',@uT02),(@lsW2_01+1,@sId02,N'PRESENT',@uT02),(@lsW2_01+1,@sId03,N'LATE',@uT02),(@lsW2_01+1,@sId04,N'PRESENT',@uT02),
 (@lsW2_01+2,@sId01,N'PRESENT',@uT03),(@lsW2_01+2,@sId02,N'PRESENT',@uT03),(@lsW2_01+2,@sId03,N'PRESENT',@uT03),(@lsW2_01+2,@sId04,N'PRESENT',@uT03),
 (@lsW2_01+3,@sId01,N'PRESENT',@uT04),(@lsW2_01+3,@sId02,N'ABSENT',@uT04),(@lsW2_01+3,@sId03,N'PRESENT',@uT04),(@lsW2_01+3,@sId04,N'PRESENT',@uT04),
-(@lsW2_01+4,@sId01,N'PRESENT',@uT05),(@lsW2_01+4,@sId02,N'PRESENT',@uT05),(@lsW2_01+4,@sId03,N'PRESENT',@uT05),(@lsW2_01+4,@sId04,N'PRESENT',@uT05);
+(@lsW2_01+4,@sId01,N'PRESENT',@uT10),(@lsW2_01+4,@sId02,N'PRESENT',@uT10),(@lsW2_01+4,@sId03,N'PRESENT',@uT10),(@lsW2_01+4,@sId04,N'PRESENT',@uT10);
 
 -- Attendance for Jun 16 (Tue) - partial (only completed sessions)
 INSERT INTO AttendanceRecords (LessonSessionId,StudentId,Status,RecordedBy) VALUES
@@ -2192,12 +2248,31 @@ INSERT INTO TimetableSlots (ClassId, SubjectId, TeacherId, SemesterId, DayOfWeek
 SELECT 
     c.ClassId,
     src.SubjectId,
-    src.TeacherId,
+    -- Map to the actual teacher assigned to this class/subject, falling back to the baseline teacher
+    COALESCE(
+        (SELECT TOP 1 TeacherId FROM TeacherClassAssignments tca 
+         WHERE tca.ClassId = c.ClassId AND tca.SubjectId = src.SubjectId AND tca.SchoolYearId = c.SchoolYearId),
+        src.TeacherId
+    ),
     sem.SemesterId,
-    src.DayOfWeek,
-    src.PeriodNo,
-    src.StartTime,
-    src.EndTime,
+    -- Shift weekly schedule space (5 days x 5 periods = 25 slots) to eliminate teacher conflicts
+    ( ( ((src.DayOfWeek - 1) * 5 + (src.PeriodNo - 1) + (c.ClassId - 1)) % 25 ) / 5 ) + 1 AS DayOfWeek,
+    ( ( ((src.DayOfWeek - 1) * 5 + (src.PeriodNo - 1) + (c.ClassId - 1)) % 25 ) % 5 ) + 1 AS PeriodNo,
+    -- Match the start/end time of the target period
+    CASE ( ( ((src.DayOfWeek - 1) * 5 + (src.PeriodNo - 1) + (c.ClassId - 1)) % 25 ) % 5 ) + 1
+        WHEN 1 THEN '07:30:00'
+        WHEN 2 THEN '08:25:00'
+        WHEN 3 THEN '09:20:00'
+        WHEN 4 THEN '10:15:00'
+        WHEN 5 THEN '11:10:00'
+    END AS StartTime,
+    CASE ( ( ((src.DayOfWeek - 1) * 5 + (src.PeriodNo - 1) + (c.ClassId - 1)) % 25 ) % 5 ) + 1
+        WHEN 1 THEN '08:15:00'
+        WHEN 2 THEN '09:10:00'
+        WHEN 3 THEN '10:05:00'
+        WHEN 4 THEN '11:00:00'
+        WHEN 5 THEN '11:55:00'
+    END AS EndTime,
     c.Room,
     COALESCE(src.EffectiveFrom, '2025-09-05')
 FROM Classes c
@@ -2215,8 +2290,8 @@ WHERE c.SchoolYearId = sem.SchoolYearId
       SELECT 1 FROM TimetableSlots target_ts
       WHERE target_ts.ClassId = c.ClassId
         AND target_ts.SemesterId = sem.SemesterId
-        AND target_ts.DayOfWeek = src.DayOfWeek
-        AND target_ts.PeriodNo = src.PeriodNo
+        AND target_ts.DayOfWeek = ( ( ((src.DayOfWeek - 1) * 5 + (src.PeriodNo - 1) + (c.ClassId - 1)) % 25 ) / 5 ) + 1
+        AND target_ts.PeriodNo = ( ( ((src.DayOfWeek - 1) * 5 + (src.PeriodNo - 1) + (c.ClassId - 1)) % 25 ) % 5 ) + 1
   );
  
 -- 3. Delete existing assessments/marks for the year first to prevent duplication

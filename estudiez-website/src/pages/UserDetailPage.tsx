@@ -1005,38 +1005,72 @@ function TeacherDetail({ user }: { user: User }) {
         </div>
       </Card>
 
-      <Card title="Weekly Schedule">
+      <Card title="Weekly Schedule" description="Chronological schedule of classes. Conflicting double-bookings are automatically highlighted.">
         {teacherSchedule.size === 0 ? (
           <p className="text-sm text-slate-500">No scheduled classes.</p>
         ) : (
-          <div className="space-y-4">
-            {Array.from(teacherSchedule.entries()).map(([day, slots]) => (
-              <div key={day}>
-                <h4 className="text-sm font-semibold text-slate-700 mb-2">{day}</h4>
-                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                  {slots.map((slot, idx) => {
-                    const slotClass = classes.find((c) => c.id === slot.classId)
-                    return (
-                      <div
-                        key={`${day}-${idx}`}
-                        className="border border-slate-200 rounded-lg px-3 py-2 bg-slate-50"
-                      >
-                        <p className="text-xs text-slate-500">
-                          Period {slot.period} ({PERIOD_TIMES[slot.period]?.start ?? '00:00'} - {PERIOD_TIMES[slot.period]?.end ?? '00:00'})
-                        </p>
-                        <p className="font-semibold text-slate-800">{slot.subject}</p>
-                        <p className="text-xs text-indigo-600">
-                          {slotClass ? slotClass.name : slot.classId}
-                        </p>
-                        {slot.room && (
-                          <p className="text-xs text-slate-500">Room: {slot.room}</p>
-                        )}
-                      </div>
-                    )
-                  })}
+          <div className="space-y-6">
+            {Array.from(teacherSchedule.entries()).map(([day, daySlots]) => {
+              const periods = Array.from(new Set(daySlots.map(s => s.period))).sort((a, b) => a - b)
+              return (
+                <div key={day} className="bg-slate-50/50 border border-slate-200/60 rounded-xl p-4">
+                  <h4 className="text-sm font-bold text-slate-800 border-b border-slate-200 pb-2 mb-3 flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">📅 {day}</span>
+                    <span className="text-xs font-normal text-slate-500">{daySlots.length} lesson(s)</span>
+                  </h4>
+                  <div className="space-y-3">
+                    {periods.map((period) => {
+                      const periodSlots = daySlots.filter((s) => s.period === period)
+                      const isConflict = periodSlots.length > 1
+                      return (
+                        <div key={period} className={`rounded-lg p-3 ${
+                          isConflict 
+                            ? 'bg-rose-50 border border-rose-200 shadow-xs' 
+                            : 'bg-white border border-slate-200 shadow-xs'
+                        }`}>
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+                            <span className="font-semibold text-slate-700 text-xs">
+                              Period {period} ({PERIOD_TIMES[period] ? `${PERIOD_TIMES[period].start} - ${PERIOD_TIMES[period].end}` : '—'})
+                            </span>
+                            {isConflict && (
+                              <span className="inline-flex items-center gap-1 text-[9px] font-bold bg-rose-100 text-rose-700 rounded-full px-2.5 py-0.5 border border-rose-200 animate-pulse">
+                                ⚠️ Schedule Conflict: Double Booked
+                              </span>
+                            )}
+                          </div>
+                          
+                          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                            {periodSlots.map((slot, idx) => {
+                              const slotClass = classes.find((c) => c.id === slot.classId)
+                              return (
+                                <div
+                                  key={`${period}-${idx}`}
+                                  className={`rounded-lg px-3 py-2 border transition-all duration-300 ${
+                                    isConflict
+                                      ? 'border-rose-300 bg-white text-rose-900 shadow-xs'
+                                      : 'border-slate-100 bg-slate-50 text-slate-800'
+                                  }`}
+                                >
+                                  <p className="font-bold text-xs">{slot.subject}</p>
+                                  <p className="text-xs text-indigo-600 font-semibold mt-0.5">
+                                    Class: {slotClass ? slotClass.name : slot.classId}
+                                  </p>
+                                  {slot.room && (
+                                    <p className="text-[10px] text-slate-400 font-medium mt-0.5 flex items-center gap-0.5">
+                                      🏫 Room: {slot.room}
+                                    </p>
+                                  )}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </Card>

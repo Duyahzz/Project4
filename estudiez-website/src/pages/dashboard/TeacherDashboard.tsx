@@ -189,6 +189,16 @@ export function TeacherDashboard() {
       <Tabs
         tabs={[
           {
+            id: 'schedule',
+            label: 'Weekly Schedule',
+            content: (
+              <ScheduleTab
+                subject={subject}
+                classIds={teacherClassIds}
+              />
+            ),
+          },
+          {
             id: 'attendance',
             label: 'Attendance',
             content: (
@@ -297,6 +307,313 @@ function ChatTab({ classIds }: { classIds: string[] }) {
           ? <ChatPanel groupId={selectedId} />
           : <p className="text-sm text-slate-400 p-6">Select a group to start chatting.</p>
         }
+      </div>
+    </div>
+  )
+}
+
+interface ScheduleTabProps {
+  subject: string
+  classIds: string[]
+}
+
+function ScheduleTab({ subject, classIds }: ScheduleTabProps) {
+  const { timetable, classes, semesters } = useData()
+  
+  const [selectedSemId, setSelectedSemId] = useState<string>(() => {
+    const todayStr = new Date().toISOString().slice(0, 10)
+    const currentSem = semesters.find((s) => todayStr >= s.startDate && todayStr <= s.endDate)
+    return currentSem?.id ?? semesters[0]?.id ?? ''
+  })
+
+  const [weekStart, setWeekStart] = useState(() => getMonday(new Date()))
+  const todayStr = localDateStr(new Date())
+
+  useEffect(() => {
+    const sem = semesters.find((s) => s.id === selectedSemId)
+    if (sem?.startDate) {
+      setWeekStart(getMonday(new Date(sem.startDate + 'T00:00:00')))
+    } else {
+      setWeekStart(getMonday(new Date()))
+    }
+  }, [selectedSemId, semesters])
+
+  const mySlots = useMemo(() => {
+    const base = timetable.filter((s) => s.subject === subject && classIds.includes(s.classId))
+    if (!selectedSemId) return base
+    return base.filter((s) => !s.semesterId || s.semesterId === selectedSemId)
+  }, [timetable, subject, classIds, selectedSemId])
+
+  const periods = useMemo(() => {
+    return Array.from(new Set(mySlots.map((s) => s.period))).sort((a, b) => a - b)
+  }, [mySlots])
+
+  const slotIndex = useMemo(() => {
+    const map = new Map<string, TimetableSlot[]>()
+    for (const s of mySlots) {
+      const key = `${s.day}-${s.period}`
+      if (!map.has(key)) map.set(key, [])
+      map.get(key)!.push(s)
+    }
+    return map
+  }, [mySlots])
+
+  const dateForDay = (day: DayOfWeek): string => {
+    const d = new Date(weekStart)
+    d.setDate(d.getDate() + DAY_OFFSET[day])
+    return localDateStr(d)
+  }
+
+  const shiftWeek = (n: number) =>
+    setWeekStart((d) => { const nd = new Date(d); nd.setDate(nd.getDate() + n * 7); return nd })
+
+  const isCurrentWeek = localDateStr(getMonday(new Date())) === localDateStr(weekStart)
+
+  const weekOptions = useMemo(() => {
+    const sem = semesters.find((s) => s.id === selectedSemId)
+    const fmtOpt = (d: Date) =>
+      d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+
+    if (sem?.startDate && sem?.endDate) {
+      const start = getMonday(new Date(sem.startDate + 'T00:00:00'))
+      const end = new Date(sem.endDate + 'T00:00:00')
+      const options = []
+      const cur = new Date(start)
+      while (cur <= end) {
+        const sat = new Date(cur)
+        sat.setDate(sat.getDate() + 5)
+        options.push({ value: localDateStr(cur), label: `${fmtOpt(cur)} – ${fmtOpt(sat)}` })
+        cur.setDate(cur.getDate() + 7)
+      }
+      return options
+    }
+
+    const today = getMonday(new Date())
+    return Array.from({ length: 9 }, (_, i) => {
+      const mon = new Date(today)
+      mon.setDate(mon.getDate() + (i - 4) * 7)
+      const sat = new Date(mon); sat.setDate(sat.getDate() + 5)
+      return { value: localDateStr(mon), label: `${fmtOpt(mon)} – ${fmtOpt(sat)}` }
+    })
+  }, [selectedSemId, semesters])
+
+  const todayDayName = useMemo(() => {
+    const dayNames: DayOfWeek[] = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+    const day = new Date().getDay()
+    if (day >= 1 && day <= 6) return dayNames[day - 1]
+    return null
+  }, [])
+
+  const todaySlots = useMemo(() => {
+    if (!todayDayName) return []
+    return mySlots.filter(s => s.day === todayDayName)
+  }, [mySlots, todayDayName])
+
+  return (
+    <div className="space-y-6">
+      {/* Metrics Banner */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center gap-3 shadow-xs">
+          <span className="text-3xl select-none">📅</span>
+          <div>
+            <p className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Total Weekly Lessons</p>
+            <p className="text-xl font-bold text-slate-800 mt-0.5">{mySlots.length} slots / week</p>
+          </div>
+        </div>
+
+        <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center gap-3 shadow-xs">
+          <span className="text-3xl select-none">⏰</span>
+          <div>
+            <p className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Lessons Scheduled Today</p>
+            <p className="text-xl font-bold text-slate-800 mt-0.5">{todaySlots.length} lessons</p>
+          </div>
+        </div>
+
+        <div className="bg-gradient-to-br from-indigo-500 to-purple-600 border border-indigo-400/20 rounded-xl p-4 text-white shadow-md flex items-center gap-3">
+          <span className="text-3xl select-none">🚀</span>
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] text-indigo-100 font-bold uppercase tracking-wider">Teaching Priority</p>
+            {todaySlots.length > 0 ? (
+              <p className="text-sm font-semibold truncate mt-0.5">
+                Next: {classes.find(c => c.id === todaySlots[0].classId)?.name} at {PERIOD_TIME[todaySlots[0].period]?.split('–')[0]}
+              </p>
+            ) : (
+              <p className="text-sm font-semibold truncate mt-0.5">No classes scheduled today</p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 space-y-4">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-4 border-b border-slate-100">
+          <div>
+            <h3 className="text-md font-bold text-slate-800">Weekly Schedule Planner</h3>
+            <p className="text-xs text-slate-400 mt-0.5">View your teaching timetable for each semester.</p>
+          </div>
+          
+          <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
+            {semesters.length > 0 && (
+              <select
+                value={selectedSemId}
+                onChange={(e) => setSelectedSemId(e.target.value)}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs text-slate-700 bg-white shadow-xs focus:ring-1 focus:ring-indigo-500"
+              >
+                {semesters.map((sem) => (
+                  <option key={sem.id} value={sem.id}>{sem.name}</option>
+                ))}
+              </select>
+            )}
+
+            <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden bg-white shadow-xs">
+              <button
+                type="button"
+                onClick={() => shiftWeek(-1)}
+                className="px-2.5 py-1.5 text-xs text-slate-600 hover:bg-slate-50 border-r border-slate-200"
+              >
+                ←
+              </button>
+              <select
+                value={localDateStr(weekStart)}
+                onChange={(e) => setWeekStart(new Date(e.target.value + 'T00:00:00'))}
+                className="border-0 px-3 py-1.5 text-xs text-slate-700 focus:ring-0 bg-transparent"
+              >
+                {weekOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => shiftWeek(1)}
+                className="px-2.5 py-1.5 text-xs text-slate-600 hover:bg-slate-50 border-l border-slate-200"
+              >
+                →
+              </button>
+            </div>
+            
+            {!isCurrentWeek && (
+              <button
+                type="button"
+                onClick={() => setWeekStart(getMonday(new Date()))}
+                className="px-3 py-1.5 text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg shadow-xs"
+              >
+                Today
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[850px] border-collapse" style={{ tableLayout: 'fixed' }}>
+            <thead>
+              <tr className="border-b border-slate-200 text-slate-500">
+                <th className="w-[10%] text-left py-3 px-3 text-xs font-semibold uppercase tracking-wider">
+                  Period / Time
+                </th>
+                {DAYS.map((day) => {
+                  const dateStr = dateForDay(day)
+                  const [, mm, dd] = dateStr.split('-')
+                  const isToday = dateStr === todayStr
+                  return (
+                    <th
+                      key={day}
+                      className={`w-[15%] text-center py-3 px-2 text-xs font-bold uppercase transition-colors ${
+                        isToday 
+                          ? 'bg-indigo-50/70 border-x border-t border-indigo-200/60 text-indigo-600 rounded-t-xl' 
+                          : 'text-slate-600'
+                      }`}
+                    >
+                      <span className="block">{day}</span>
+                      <span className={`block font-normal text-[10px] mt-0.5 ${isToday ? 'text-indigo-400' : 'text-slate-400'}`}>
+                        {dd}/{mm}
+                      </span>
+                    </th>
+                  )
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {periods.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="text-center text-slate-400 py-10 text-sm">
+                    No weekly timetable slots configured for your subject in this semester.
+                  </td>
+                </tr>
+              ) : (
+                periods.map((period) => (
+                  <tr key={period} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/20 transition-colors">
+                    <td className="py-4 px-3 text-slate-500 whitespace-nowrap align-middle">
+                      <span className="font-bold text-slate-700 text-sm block">P{period}</span>
+                      <span className="text-[10px] text-slate-400 font-medium block mt-0.5">{PERIOD_TIME[period] ?? ''}</span>
+                    </td>
+                    {DAYS.map((day) => {
+                      const slots = slotIndex.get(`${day}-${period}`) ?? []
+                      const isToday = dateForDay(day) === todayStr
+                      const hasConflict = slots.length > 1
+                      return (
+                        <td 
+                          key={day} 
+                          className={`p-2 align-top transition-colors ${
+                            isToday ? 'bg-indigo-50/30 border-x border-indigo-200/30' : ''
+                          }`}
+                        >
+                          {slots.length > 0 ? (
+                            <div className="space-y-2">
+                              {hasConflict && (
+                                <div className="bg-rose-50 border border-rose-200 text-rose-800 text-[8px] font-bold rounded px-1.5 py-0.5 text-center flex items-center justify-center gap-0.5 select-none animate-pulse">
+                                  ⚠️ Schedule Overlap
+                                </div>
+                              )}
+                              {slots.map((slot) => {
+                                const meta = SUBJECT_META[slot.subject] ?? DEFAULT_META
+                                return (
+                                  <div
+                                    key={slot.id}
+                                    className={`rounded-xl p-3 border shadow-xs hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 ${
+                                      hasConflict
+                                        ? 'border-rose-200 bg-rose-50/40 hover:bg-rose-50'
+                                        : isToday 
+                                          ? 'border-indigo-200 bg-white ring-1 ring-indigo-50/50' 
+                                          : 'bg-white border-slate-100'
+                                    }`}
+                                  >
+                                  <div className="flex items-start justify-between gap-1.5">
+                                    <div className="min-w-0">
+                                      <p className="font-bold text-slate-800 text-xs truncate">
+                                        {classes.find(c => c.id === slot.classId)?.name ?? slot.classId}
+                                      </p>
+                                      <p className="text-[10px] text-slate-400 font-medium mt-0.5 flex items-center gap-1">
+                                        🏫 Room {slot.room || '—'}
+                                      </p>
+                                    </div>
+                                    <span className="text-md shrink-0 select-none">{meta.emoji}</span>
+                                  </div>
+                                  
+                                  <div className="mt-2.5 pt-2 border-t border-slate-50 flex items-center justify-between text-[9px] text-slate-400 font-semibold uppercase tracking-wider">
+                                    <span>{slot.subject}</span>
+                                    {isToday && (
+                                      <span className="inline-flex items-center gap-0.5 text-[8px] font-bold bg-indigo-50 text-indigo-600 rounded px-1.5 py-0.5 border border-indigo-100">
+                                        Today
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              )
+                            })}
+                            </div>
+                          ) : (
+                            <div className="h-full min-h-[50px] flex items-center justify-center text-slate-200/50 select-none">
+                              •
+                            </div>
+                          )}
+                        </td>
+                      )
+                    })}
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   )
@@ -614,22 +931,29 @@ function AttendanceTab({ subject, classIds, studentsByClass }: AttendanceTabProp
                             <button
                               key={slot.id}
                               onClick={() => openSlot(slot)}
-                              className={`w-full text-left rounded-lg px-2 py-1.5 border transition-colors block ${
+                              className={`w-full text-left rounded-xl p-2.5 border transition-all duration-300 shadow-xs hover:shadow-md block hover:-translate-y-0.5 cursor-pointer ${
                                 active
-                                  ? 'border-indigo-500 bg-indigo-100 ring-1 ring-indigo-400'
+                                  ? 'border-indigo-600 bg-indigo-600 text-white shadow-indigo-100 ring-2 ring-indigo-200'
                                   : taken
-                                    ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
-                                    : 'border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100'
+                                    ? 'border-emerald-100 bg-emerald-50 hover:bg-emerald-100/70 text-emerald-800'
+                                    : 'border-amber-100 bg-amber-50 hover:bg-amber-100/70 text-amber-900'
                               }`}
                             >
-                              <div className="flex items-center gap-1">
-                                <span className="text-sm">{(SUBJECT_META[slot.subject] ?? DEFAULT_META).emoji}</span>
-                                <span className="font-semibold leading-tight text-xs">{classes.find(c => c.id === slot.classId)?.name ?? slot.classId}</span>
+                              <div className="flex items-center justify-between gap-1">
+                                <span className={`font-bold text-xs ${active ? 'text-white' : 'text-slate-800'}`}>
+                                  {classes.find(c => c.id === slot.classId)?.name ?? slot.classId}
+                                </span>
+                                <span className="text-sm select-none">{(SUBJECT_META[slot.subject] ?? DEFAULT_META).emoji}</span>
                               </div>
-                              <div className="text-slate-400 text-[10px]">{slot.room}</div>
-                              {taken && (
-                                <div className="text-emerald-600 font-medium text-[10px] mt-0.5">✓ Done</div>
-                              )}
+                              
+                              <div className={`text-[10px] mt-1 flex items-center justify-between ${active ? 'text-indigo-100' : 'text-slate-500'}`}>
+                                <span>Room {slot.room || '—'}</span>
+                                {taken && (
+                                  <span className="font-bold text-emerald-600 bg-white/80 rounded px-1 text-[8px] py-0.5 border border-emerald-200">
+                                    Done
+                                  </span>
+                                )}
+                              </div>
                             </button>
                           )
                         })}
