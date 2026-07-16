@@ -21,6 +21,8 @@ export interface User {
   studentId?: string
   /** Teacher primary key (UUID in database) */
   teacherId?: string
+  /** Parent primary key (UUID in database) */
+  parentId?: string
   /** Student: admission date (string format YYYY-MM-DD) */
   admissionDate?: string
   /** Student: homeroom class id (e.g. "10A1"). */
