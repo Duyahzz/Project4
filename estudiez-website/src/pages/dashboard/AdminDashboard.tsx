@@ -14,7 +14,13 @@ import { classDetailPath } from '../classDetailPath'
 import { notificationDetailPath } from '../notificationDetailPath'
 import type { ChatGroupType, Grade } from '../../types'
 import { ManageGrades } from './ManageGrades'
-import { getSchoolYears } from '../../services/api'
+import {
+  getSchoolYears,
+  createApiUser,
+  createApiStudent,
+  linkParentToStudent,
+  enrollStudentInClass,
+} from '../../services/api'
 
 export function AdminDashboard() {
   const { users, classes } = useData()
@@ -324,9 +330,13 @@ function StatCard({ label, value }: { label: string; value: number }) {
 interface StudentFormState {
   email: string
   fullName: string
-  address: string
+  username: string
   phone: string
-  age: string
+  address: string
+  dateOfBirth: string
+  gender: string
+  studentCode: string
+  admissionDate: string
   grade: string
   classId: string
   parentEmail: string
@@ -335,18 +345,23 @@ interface StudentFormState {
 const STUDENT_INITIAL: StudentFormState = {
   email: '',
   fullName: '',
-  address: '',
+  username: '',
   phone: '',
-  age: '',
+  address: '',
+  dateOfBirth: '',
+  gender: 'Male',
+  studentCode: '',
+  admissionDate: new Date().toISOString().split('T')[0],
   grade: '10',
   classId: '',
   parentEmail: '',
 }
 
 function ManageStudents({ year }: { year?: string }) {
-  const { users, classes, addUser, updateUser } = useData()
+  const { users, classes, refreshData } = useData()
   const { push } = useToast()
   const navigate = useNavigate()
+  const [submitting, setSubmitting] = useState(false)
 
   const filteredClasses = useMemo(() => {
     return year ? classes.filter(c => c.year === year) : classes
@@ -438,6 +453,21 @@ function ManageStudents({ year }: { year?: string }) {
     classId: filteredClasses.filter((c) => c.grade === 10)[0]?.id ?? '',
   })
   const [errors, setErrors] = useState<Partial<Record<keyof StudentFormState, string>>>({})
+  const [newlyCreatedCredentials, setNewlyCreatedCredentials] = useState<{
+    fullName: string
+    email: string
+    tempPass: string
+    status: string
+  } | null>(null)
+
+  const generateRandomPassword = (length = 10): string => {
+    const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%'
+    let password = ''
+    for (let i = 0; i < length; i++) {
+      password += chars.charAt(Math.floor(Math.random() * chars.length))
+    }
+    return password
+  }
 
   const update = <K extends keyof StudentFormState>(key: K, value: StudentFormState[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -456,55 +486,108 @@ function ManageStudents({ year }: { year?: string }) {
     setModalOpen(true)
   }
 
-  const submit = (event: React.FormEvent<HTMLFormElement>) => {
+  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const email = form.email.trim().toLowerCase()
+    const username = form.username.trim().toLowerCase()
     const next: Partial<Record<keyof StudentFormState, string>> = {}
+
     if (!form.email.trim()) next.email = 'Email is required.'
     else if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email)) next.email = 'Enter a valid email.'
     else if (users.some((u) => u.email === email)) next.email = 'This email already exists.'
+
+    if (!username) next.username = 'Username is required.'
+
     if (!form.fullName.trim()) next.fullName = 'Full name is required.'
     if (!form.address.trim()) next.address = 'Address is required.'
     if (!form.phone.trim()) next.phone = 'Phone number is required.'
     else if (!/^[+\d][\d\s().-]{6,}$/.test(form.phone.trim()))
       next.phone = 'Enter a valid phone number.'
+
+    if (!form.studentCode.trim()) next.studentCode = 'Student code is required.'
+    if (!form.dateOfBirth) next.dateOfBirth = 'Date of birth is required.'
+    if (!form.admissionDate) next.admissionDate = 'Admission date is required.'
+
     const selectedGrade = parseInt(form.grade, 10) as Grade
     if (selectedGrade !== 9 && !form.classId) next.classId = 'Assign a class.'
-    const ageNumber = Number(form.age)
-    if (!form.age) next.age = 'Age is required.'
-    else if (Number.isNaN(ageNumber) || ageNumber < 5 || ageNumber > 100)
-      next.age = 'Age must be 5-100.'
+
     if (form.parentEmail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.parentEmail))
       next.parentEmail = 'Enter a valid parent email or leave blank.'
 
     setErrors(next)
     if (Object.keys(next).length > 0) return
 
-    const selectedClass = classes.find((c) => c.id === form.classId)
-    const grade = selectedClass ? (selectedClass.grade as Grade) : selectedGrade
+    setSubmitting(true)
+    try {
+      const tempPassword = generateRandomPassword()
 
-    addUser({
-      email,
-      fullName: form.fullName.trim(),
-      address: form.address.trim(),
-      phone: form.phone.trim(),
-      age: ageNumber,
-      password: 'student123',
-      role: 'student',
-      classId: form.classId || undefined,
-      grade,
-    })
+      // 1. Create User account (Role ID 3 = STUDENT)
+      const createdUser = await createApiUser({
+        roleId: 3,
+        username,
+        passwordHash: tempPassword,
+        fullName: form.fullName.trim(),
+        email,
+        phone: form.phone.trim(),
+        isActive: true,
+      })
 
-    // Link an existing parent account to this student.
-    const nextParentEmail = form.parentEmail.trim().toLowerCase()
-    if (nextParentEmail) {
-      const parent = users.find((u) => u.email === nextParentEmail && u.role === 'parent')
-      if (parent) updateUser(nextParentEmail, { childEmail: email })
+      if (!createdUser.userId) {
+        throw new Error('Failed to retrieve created user ID from backend.')
+      }
+
+      // 2. Create Student profile
+      const createdStudent = await createApiStudent({
+        userId: createdUser.userId,
+        studentCode: form.studentCode.trim(),
+        dateOfBirth: form.dateOfBirth,
+        gender: form.gender,
+        address: form.address.trim(),
+        admissionDate: form.admissionDate,
+        status: selectedGrade === 9 ? 'PENDING_GRADE_ASSIGNMENT' : 'ACTIVE',
+        currentGrade: selectedGrade,
+      })
+
+      if (!createdStudent.studentId) {
+        throw new Error('Failed to retrieve created student profile ID.')
+      }
+
+      // 3. Enroll in class if specified
+      if (form.classId) {
+        await enrollStudentInClass(form.classId, createdStudent.studentId)
+      }
+
+      // 4. Link parent if parentEmail is provided
+      const parentEmailVal = form.parentEmail.trim().toLowerCase()
+      if (parentEmailVal) {
+        const parentUser = users.find(
+          (u) => u.email.toLowerCase() === parentEmailVal && u.role === 'parent'
+        )
+        if (parentUser && parentUser.parentId) {
+          await linkParentToStudent(parentUser.parentId, email)
+        } else {
+          push('info', `Student created, but parent with email "${parentEmailVal}" was not found to link.`)
+        }
+      }
+
+      // 5. Refresh global state
+      await refreshData()
+
+      setModalOpen(false)
+      resetForm()
+      setNewlyCreatedCredentials({
+        fullName: form.fullName.trim(),
+        email,
+        tempPass: tempPassword,
+        status: selectedGrade === 9 ? 'PENDING_GRADE_ASSIGNMENT' : 'ACTIVE',
+      })
+      push('success', `Student "${form.fullName.trim()}" added successfully.`)
+    } catch (err: any) {
+      console.error(err)
+      push('error', err?.message || 'Failed to create student profile. Ensure student code is unique.')
+    } finally {
+      setSubmitting(false)
     }
-
-    setModalOpen(false)
-    resetForm()
-    push('success', `Student added. Login info sent to ${email}.`)
   }
 
   return (
@@ -523,18 +606,29 @@ function ManageStudents({ year }: { year?: string }) {
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        title="Add / Enroll Student"
+        title={`Add / Enroll Student (${year})`}
         description="Login credentials are emailed to the student and parent."
       >
         <form onSubmit={submit} noValidate className="space-y-3">
-          <FormField
-            label="Email"
-            name="studentEmail"
-            type="email"
-            value={form.email}
-            onChange={(e) => update('email', e.target.value)}
-            error={errors.email}
-          />
+          <div className="grid grid-cols-2 gap-3">
+            <FormField
+              label="Username"
+              name="studentUsername"
+              value={form.username}
+              onChange={(e) => update('username', e.target.value)}
+              error={errors.username}
+              hint="Account username (e.g. john.doe)"
+            />
+            <FormField
+              label="Student Code"
+              name="studentCode"
+              value={form.studentCode}
+              onChange={(e) => update('studentCode', e.target.value)}
+              error={errors.studentCode}
+              hint="Unique code (e.g. STU101)"
+            />
+          </div>
+
           <FormField
             label="Full Name"
             name="studentName"
@@ -542,6 +636,26 @@ function ManageStudents({ year }: { year?: string }) {
             onChange={(e) => update('fullName', e.target.value)}
             error={errors.fullName}
           />
+
+          <div className="grid grid-cols-2 gap-3">
+            <FormField
+              label="Email"
+              name="studentEmail"
+              type="email"
+              value={form.email}
+              onChange={(e) => update('email', e.target.value)}
+              error={errors.email}
+            />
+            <FormField
+              label="Phone Number"
+              name="studentPhone"
+              type="tel"
+              value={form.phone}
+              onChange={(e) => update('phone', e.target.value)}
+              error={errors.phone}
+            />
+          </div>
+
           <FormField
             label="Address"
             name="studentAddress"
@@ -549,64 +663,82 @@ function ManageStudents({ year }: { year?: string }) {
             onChange={(e) => update('address', e.target.value)}
             error={errors.address}
           />
-          <FormField
-            label="Phone Number"
-            name="studentPhone"
-            type="tel"
-            value={form.phone}
-            onChange={(e) => update('phone', e.target.value)}
-            error={errors.phone}
-          />
-          <FormField
-            label="Age"
-            name="studentAge"
-            type="number"
-            min={5}
-            max={100}
-            value={form.age}
-            onChange={(e) => update('age', e.target.value)}
-            error={errors.age}
-          />
-          <FormField
-            as="select"
-            label="Grade"
-            name="studentGrade"
-            value={form.grade}
-            onChange={(e) => {
-              const selectedGrade = e.target.value
-              update('grade', selectedGrade)
-              const gradeVal = parseInt(selectedGrade, 10)
-              const matchingClasses = filteredClasses.filter((c) => c.grade === gradeVal)
-              update('classId', matchingClasses[0]?.id ?? '')
-            }}
-            error={errors.grade}
-          >
-            <option value="9">Grade 9</option>
-            <option value="10">Grade 10</option>
-            <option value="11">Grade 11</option>
-            <option value="12">Grade 12</option>
-          </FormField>
-          <FormField
-            as="select"
-            label="Class"
-            name="studentClass"
-            value={form.classId}
-            onChange={(e) => update('classId', e.target.value)}
-            error={errors.classId}
-          >
-            {parseInt(form.grade, 10) === 9 ? (
-              <option value="">Unassigned</option>
-            ) : (
-              <option value="">Select a class</option>
-            )}
-            {filteredClasses
-              .filter((c) => c.grade === parseInt(form.grade, 10))
-              .map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} (Grade {c.grade})
-                </option>
-              ))}
-          </FormField>
+
+          <div className="grid grid-cols-3 gap-3">
+            <FormField
+              label="Date of Birth"
+              name="studentDob"
+              type="date"
+              value={form.dateOfBirth}
+              onChange={(e) => update('dateOfBirth', e.target.value)}
+              error={errors.dateOfBirth}
+            />
+            <FormField
+              as="select"
+              label="Gender"
+              name="studentGender"
+              value={form.gender}
+              onChange={(e) => update('gender', e.target.value)}
+              error={errors.gender}
+            >
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+              <option value="Other">Other</option>
+            </FormField>
+            <FormField
+              label="Admission Date"
+              name="studentAdmissionDate"
+              type="date"
+              value={form.admissionDate}
+              onChange={(e) => update('admissionDate', e.target.value)}
+              error={errors.admissionDate}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <FormField
+              as="select"
+              label="Grade"
+              name="studentGrade"
+              value={form.grade}
+              onChange={(e) => {
+                const selectedGrade = e.target.value
+                update('grade', selectedGrade)
+                const gradeVal = parseInt(selectedGrade, 10)
+                const matchingClasses = filteredClasses.filter((c) => c.grade === gradeVal)
+                update('classId', matchingClasses[0]?.id ?? '')
+              }}
+              error={errors.grade}
+            >
+              <option value="9">Grade 9 (New Student)</option>
+              <option value="10">Grade 10</option>
+              <option value="11">Grade 11</option>
+              <option value="12">Grade 12</option>
+            </FormField>
+            <FormField
+              as="select"
+              label="Class"
+              name="studentClass"
+              value={form.classId}
+              onChange={(e) => update('classId', e.target.value)}
+              error={errors.classId}
+              disabled={parseInt(form.grade, 10) === 9}
+            >
+              {parseInt(form.grade, 10) === 9 ? (
+                <option value="">Unassigned</option>
+              ) : (
+                <option value="">Select a class</option>
+              )}
+              {parseInt(form.grade, 10) !== 9 && filteredClasses
+                .filter((c) => c.grade === parseInt(form.grade, 10))
+                .map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} (Grade {c.grade})
+                  </option>
+                ))}
+            </FormField>
+          </div>
+
           <FormField
             label="Parent Email (optional)"
             name="parentEmail"
@@ -616,22 +748,86 @@ function ManageStudents({ year }: { year?: string }) {
             error={errors.parentEmail}
             hint="Links an existing parent account to this student."
           />
+
           <div className="flex items-center gap-2 pt-2">
             <button
               type="submit"
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-md px-4 py-2"
+              disabled={submitting}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-md px-4 py-2 disabled:opacity-50"
             >
-              Add Student
+              {submitting ? 'Saving...' : 'Add Student'}
             </button>
             <button
               type="button"
+              disabled={submitting}
               onClick={() => setModalOpen(false)}
-              className="border border-slate-300 text-slate-700 hover:bg-slate-100 font-semibold rounded-md px-4 py-2"
+              className="border border-slate-300 text-slate-700 hover:bg-slate-100 font-semibold rounded-md px-4 py-2 disabled:opacity-50"
             >
               Cancel
             </button>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        open={newlyCreatedCredentials !== null}
+        onClose={() => setNewlyCreatedCredentials(null)}
+        title="Student Registered Successfully"
+        description="Please copy these credentials and provide them to the student. For security, the temporary password will not be shown again."
+      >
+        {newlyCreatedCredentials && (
+          <div className="space-y-4 pt-2">
+            <div className="rounded-lg bg-emerald-50 border border-emerald-100 p-3 text-sm text-emerald-800 flex items-center gap-2">
+              <span className="text-lg">✔️</span>
+              <span>Account created successfully!</span>
+            </div>
+            <div className="space-y-2.5">
+              <div>
+                <span className="block text-xs font-semibold uppercase text-slate-500">Student Name</span>
+                <span className="text-sm font-semibold text-slate-800">{newlyCreatedCredentials.fullName}</span>
+              </div>
+              <div>
+                <span className="block text-xs font-semibold uppercase text-slate-500">Email/Username</span>
+                <span className="text-sm font-mono text-slate-800 bg-slate-100 px-2 py-0.5 rounded select-all">
+                  {newlyCreatedCredentials.email}
+                </span>
+              </div>
+              <div>
+                <span className="block text-xs font-semibold uppercase text-slate-500">Temporary Password</span>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="flex-1 font-mono text-sm font-semibold text-indigo-700 bg-indigo-50 border border-indigo-100 px-3 py-1.5 rounded select-all">
+                    {newlyCreatedCredentials.tempPass}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(newlyCreatedCredentials.tempPass)
+                      push('success', 'Password copied to clipboard!')
+                    }}
+                    className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+                  >
+                    Copy
+                  </button>
+                </div>
+              </div>
+              <div>
+                <span className="block text-xs font-semibold uppercase text-slate-500">Initial Grade Status</span>
+                <span className="inline-flex rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700 border border-indigo-100 uppercase mt-1">
+                  {newlyCreatedCredentials.status}
+                </span>
+              </div>
+            </div>
+            <div className="pt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setNewlyCreatedCredentials(null)}
+                className="rounded-md bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
 
       <Card>

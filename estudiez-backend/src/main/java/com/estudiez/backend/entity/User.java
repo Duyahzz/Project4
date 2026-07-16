@@ -23,6 +23,9 @@ public class User {
     @Column(nullable = false, length = 255)
     private String passwordHash;
 
+    @Column(name = "PlainPassword", length = 255)
+    private String plainPassword;
+
     @Column(nullable = false, length = 150)
     private String fullName;
 

@@ -1,12 +1,21 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, Fragment } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Card } from '../components/Card'
 import { FormField } from '../components/FormField'
 import { useData } from '../hooks/useData'
 import { useToast } from '../hooks/useToast'
+import { useAuth } from '../hooks/useAuth'
 import { classDetailPath } from './classDetailPath'
 import { userDetailPath } from './userDetailPath'
 import type { AttendanceStatus, Grade, Role, User } from '../types'
+import {
+  getStudents,
+  getUsers,
+  updateApiUser,
+  updateApiStudent,
+  enrollStudentInClass,
+  linkParentToStudent,
+} from '../services/api'
 
 const ROLE_BADGE: Record<Role, string> = {
   admin: 'bg-slate-200 text-slate-700',
@@ -43,6 +52,14 @@ interface EditFormState {
   parentEmail: string
   subject: string
   childEmail: string
+  username: string
+  studentCode: string
+  dateOfBirth: string
+  gender: string
+  admissionDate: string
+  status: string
+  grade: string
+  password: string
 }
 
 type EditErrors = Partial<Record<keyof EditFormState, string>>
@@ -53,11 +70,37 @@ export function UserDetailPage() {
   const { users, classes, scores, attendance, progress, evaluations, updateUser, deleteUser } =
     useData()
   const { push } = useToast()
+  const { currentUser } = useAuth()
 
   const [editing, setEditing] = useState(false)
 
   const email = (emailParam ? decodeURIComponent(emailParam) : '').toLowerCase()
   const user = users.find((u) => u.email.toLowerCase() === email)
+
+  const [studentProfile, setStudentProfile] = useState<any>(null)
+  const [userProfile, setUserProfile] = useState<any>(null)
+
+  useEffect(() => {
+    if (user) {
+      getUsers()
+        .then((list) => {
+          const profile = list.find((u) => u.email?.toLowerCase() === user.email.toLowerCase())
+          setUserProfile(profile || null)
+        })
+        .catch(console.error)
+    }
+  }, [user])
+
+  useEffect(() => {
+    if (user?.role === 'student' && user.studentId) {
+      getStudents()
+        .then((list) => {
+          const profile = list.find((s) => String(s.studentId).toLowerCase() === user.studentId?.toLowerCase())
+          setStudentProfile(profile || null)
+        })
+        .catch(console.error)
+    }
+  }, [user])
 
   if (!user) {
     return (
@@ -141,7 +184,13 @@ export function UserDetailPage() {
       </header>
 
       {editing ? (
-        <EditUserForm user={user} linkedParent={linkedParent} onDone={() => setEditing(false)} />
+        <EditUserForm
+          user={user}
+          userProfile={userProfile}
+          studentProfile={studentProfile}
+          linkedParent={linkedParent}
+          onDone={() => setEditing(false)}
+        />
       ) : null}
 
       <Card title="Account Details">
@@ -150,6 +199,32 @@ export function UserDetailPage() {
           <Detail label="Phone" value={user.phone ?? '—'} />
           <Detail label="Address" value={user.address || '—'} />
           {user.age ? <Detail label="Age" value={String(user.age)} /> : null}
+          {currentUser?.role === 'admin' ? (
+            <div>
+              <dt className="text-xs font-semibold uppercase text-slate-500">Password</dt>
+              {user.password ? (
+                <dd className="mt-1 flex items-center gap-2">
+                  <span className="font-mono text-sm text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded select-all">
+                    {user.password}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(user.password)
+                    }}
+                    className="text-xs text-slate-500 hover:text-slate-700 border border-slate-300 rounded px-2 py-0.5 hover:bg-slate-50 transition-colors"
+                    title="Copy password"
+                  >
+                    Copy
+                  </button>
+                </dd>
+              ) : (
+                <dd className="mt-1 text-sm text-slate-400 italic">
+                  Not available — set via Edit to update
+                </dd>
+              )}
+            </div>
+          ) : null}
         </dl>
       </Card>
 
@@ -179,15 +254,21 @@ export function UserDetailPage() {
 
 function EditUserForm({
   user,
+  userProfile,
+  studentProfile,
   linkedParent,
   onDone,
 }: {
   user: User
+  userProfile?: any
+  studentProfile?: any
   linkedParent?: User
   onDone: () => void
 }) {
-  const { users, classes, subjects, updateUser } = useData()
+  const { users, classes, subjects, refreshData } = useData()
   const { push } = useToast()
+  const { currentUser } = useAuth()
+  const [submitting, setSubmitting] = useState(false)
 
   const [form, setForm] = useState<EditFormState>({
     fullName: user.fullName,
@@ -198,13 +279,43 @@ function EditUserForm({
     parentEmail: linkedParent?.email ?? '',
     subject: user.subject ?? '',
     childEmail: user.childEmail ?? '',
+    username: userProfile?.username ?? user.email.split('@')[0],
+    studentCode: studentProfile?.studentCode ?? '',
+    dateOfBirth: studentProfile?.dateOfBirth ?? '',
+    gender: studentProfile?.gender ?? 'Male',
+    admissionDate: studentProfile?.admissionDate ?? '',
+    status: studentProfile?.status ?? 'ACTIVE',
+    grade: user.grade ? String(user.grade) : '10',
+    password: user.password ?? '',
   })
   const [errors, setErrors] = useState<EditErrors>({})
+
+  useEffect(() => {
+    if (studentProfile) {
+      setForm((prev) => ({
+        ...prev,
+        studentCode: studentProfile.studentCode ?? '',
+        dateOfBirth: studentProfile.dateOfBirth ?? '',
+        gender: studentProfile.gender ?? 'Male',
+        admissionDate: studentProfile.admissionDate ?? '',
+        status: studentProfile.status ?? 'ACTIVE',
+      }))
+    }
+  }, [studentProfile])
+
+  useEffect(() => {
+    if (userProfile) {
+      setForm((prev) => ({
+        ...prev,
+        username: userProfile.username ?? '',
+      }))
+    }
+  }, [userProfile])
 
   const update = <K extends keyof EditFormState>(key: K, value: EditFormState[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }))
 
-  const submit = (event: React.FormEvent<HTMLFormElement>) => {
+  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const next: EditErrors = {}
     if (!form.fullName.trim()) next.fullName = 'Full name is required.'
@@ -213,11 +324,14 @@ function EditUserForm({
     else if (!PHONE_PATTERN.test(form.phone.trim())) next.phone = 'Enter a valid phone number.'
 
     if (user.role === 'student') {
-      const ageNumber = Number(form.age)
-      if (!form.age) next.age = 'Age is required.'
-      else if (Number.isNaN(ageNumber) || ageNumber < 5 || ageNumber > 100)
-        next.age = 'Age must be 5-100.'
-      if (!form.classId) next.classId = 'Assign a class.'
+      if (!form.username.trim()) next.username = 'Username is required.'
+      if (!form.studentCode.trim()) next.studentCode = 'Student code is required.'
+      if (!form.dateOfBirth) next.dateOfBirth = 'Date of birth is required.'
+      if (!form.admissionDate) next.admissionDate = 'Admission date is required.'
+
+      const isGrade9OrPending = form.grade === '9' || form.status === 'PENDING_GRADE_ASSIGNMENT'
+      if (!isGrade9OrPending && !form.classId) next.classId = 'Assign a class.'
+
       if (form.parentEmail && !EMAIL_PATTERN.test(form.parentEmail))
         next.parentEmail = 'Enter a valid parent email or leave blank.'
     }
@@ -236,38 +350,68 @@ function EditUserForm({
     setErrors(next)
     if (Object.keys(next).length > 0) return
 
-    const patch: Parameters<typeof updateUser>[1] = {
-      fullName: form.fullName.trim(),
-      address: form.address.trim(),
-      phone: form.phone.trim(),
-    }
+    setSubmitting(true)
+    try {
+      // 1. Update User account
+      let roleId = 1
+      if (user.role === 'teacher') roleId = 2
+      else if (user.role === 'student') roleId = 3
+      else if (user.role === 'parent') roleId = 4
 
-    if (user.role === 'student') {
-      const selectedClass = classes.find((c) => c.id === form.classId)
-      patch.age = Number(form.age)
-      patch.classId = form.classId
-      patch.grade = (selectedClass?.grade ?? 10) as Grade
-    }
-    if (user.role === 'teacher') patch.subject = form.subject
-    if (user.role === 'parent')
-      patch.childEmail = form.childEmail ? form.childEmail.trim().toLowerCase() : undefined
+      await updateApiUser(user.userId!, {
+        roleId,
+        username: form.username.trim(),
+        passwordHash: '',
+        fullName: form.fullName.trim(),
+        email: user.email,
+        phone: form.phone.trim(),
+        isActive: true,
+        ...({ plainPassword: form.password.trim() } as any),
+      })
 
-    updateUser(user.email, patch)
+      // 2. Update Student profile
+      if (user.role === 'student' && user.studentId) {
+        const selectedGrade = form.grade ? (parseInt(form.grade, 10) as Grade) : null
+        await updateApiStudent(user.studentId, {
+          studentId: user.studentId,
+          userId: user.userId,
+          studentCode: form.studentCode.trim(),
+          dateOfBirth: form.dateOfBirth,
+          gender: form.gender,
+          address: form.address.trim(),
+          admissionDate: form.admissionDate,
+          status: form.status,
+          currentGrade: selectedGrade,
+        })
 
-    // Sync the parent → child link for students.
-    if (user.role === 'student') {
-      const nextParentEmail = form.parentEmail.trim().toLowerCase()
-      if (linkedParent && linkedParent.email !== nextParentEmail) {
-        updateUser(linkedParent.email, { childEmail: undefined })
+        // Enroll in class if changed
+        if (form.classId && form.classId !== user.classId) {
+          await enrollStudentInClass(form.classId, user.studentId)
+        }
       }
-      if (nextParentEmail) {
-        const parent = users.find((u) => u.email === nextParentEmail && u.role === 'parent')
-        if (parent) updateUser(nextParentEmail, { childEmail: user.email })
-      }
-    }
 
-    push('success', 'Profile updated.')
-    onDone()
+      // 3. Link parent if parentEmail is provided
+      if (user.role === 'student') {
+        const nextParentEmail = form.parentEmail.trim().toLowerCase()
+        const parentUser = users.find(
+          (u) => u.email.toLowerCase() === nextParentEmail && u.role === 'parent'
+        )
+        if (parentUser && parentUser.parentId) {
+          await linkParentToStudent(parentUser.parentId, user.email)
+        }
+      }
+
+      // 4. Refresh global state
+      await refreshData()
+
+      push('success', 'Profile updated successfully.')
+      onDone()
+    } catch (err: any) {
+      console.error(err)
+      push('error', err?.message || 'Failed to update profile details.')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -299,18 +443,80 @@ function EditUserForm({
           error={errors.address}
         />
 
+        {currentUser?.role === 'admin' && (
+          <FormField
+            label="Password"
+            name="editPassword"
+            type="text"
+            value={form.password}
+            onChange={(e) => update('password', e.target.value)}
+            error={errors.password}
+          />
+        )}
+
         {user.role === 'student' ? (
           <>
             <FormField
-              label="Age"
-              name="editAge"
-              type="number"
-              min={5}
-              max={100}
-              value={form.age}
-              onChange={(e) => update('age', e.target.value)}
-              error={errors.age}
+              label="Username"
+              name="editUsername"
+              value={form.username}
+              onChange={(e) => update('username', e.target.value)}
+              error={errors.username}
             />
+            <FormField
+              label="Student Code"
+              name="editStudentCode"
+              value={form.studentCode}
+              onChange={(e) => update('studentCode', e.target.value)}
+              error={errors.studentCode}
+            />
+            <FormField
+              label="Date of Birth"
+              name="editDob"
+              type="date"
+              value={form.dateOfBirth}
+              onChange={(e) => update('dateOfBirth', e.target.value)}
+              error={errors.dateOfBirth}
+            />
+            <FormField
+              as="select"
+              label="Gender"
+              name="editGender"
+              value={form.gender}
+              onChange={(e) => update('gender', e.target.value)}
+              error={errors.gender}
+            >
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+              <option value="Other">Other</option>
+            </FormField>
+            <FormField
+              label="Admission Date"
+              name="editAdmissionDate"
+              type="date"
+              value={form.admissionDate}
+              onChange={(e) => update('admissionDate', e.target.value)}
+              error={errors.admissionDate}
+            />
+            <FormField
+              as="select"
+              label="Grade"
+              name="editGrade"
+              value={form.grade}
+              onChange={(e) => {
+                const selectedGrade = e.target.value
+                update('grade', selectedGrade)
+                const gradeVal = parseInt(selectedGrade, 10)
+                const matchingClasses = classes.filter((c) => c.grade === gradeVal)
+                update('classId', matchingClasses[0]?.id ?? '')
+              }}
+              error={errors.grade}
+            >
+              <option value="9">Grade 9</option>
+              <option value="10">Grade 10</option>
+              <option value="11">Grade 11</option>
+              <option value="12">Grade 12</option>
+            </FormField>
             <FormField
               as="select"
               label="Class"
@@ -318,13 +524,40 @@ function EditUserForm({
               value={form.classId}
               onChange={(e) => update('classId', e.target.value)}
               error={errors.classId}
+              disabled={form.grade === '9' || form.status === 'PENDING_GRADE_ASSIGNMENT'}
             >
-              <option value="">Select a class</option>
-              {classes.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} (Grade {c.grade})
-                </option>
-              ))}
+              {form.grade === '9' || form.status === 'PENDING_GRADE_ASSIGNMENT' ? (
+                <option value="">Unassigned</option>
+              ) : (
+                <option value="">Select a class</option>
+              )}
+              {form.grade !== '9' && form.status !== 'PENDING_GRADE_ASSIGNMENT' && classes
+                .filter((c) => String(c.grade) === form.grade)
+                .map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} (Grade {c.grade})
+                  </option>
+                ))}
+            </FormField>
+            <FormField
+              as="select"
+              label="Status"
+              name="editStatus"
+              value={form.status}
+              onChange={(e) => {
+                const selectedStatus = e.target.value
+                update('status', selectedStatus)
+                if (selectedStatus === 'PENDING_GRADE_ASSIGNMENT') {
+                  update('classId', '')
+                }
+              }}
+              error={errors.status}
+            >
+              <option value="ACTIVE">ACTIVE</option>
+              <option value="PENDING_GRADE_ASSIGNMENT">PENDING_GRADE_ASSIGNMENT</option>
+              <option value="GRADUATED">GRADUATED</option>
+              <option value="TRANSFERRED">TRANSFERRED</option>
+              <option value="SUSPENDED">SUSPENDED</option>
             </FormField>
             <FormField
               label="Parent Email (optional)"
@@ -371,14 +604,16 @@ function EditUserForm({
         <div className="sm:col-span-2 flex items-center gap-2">
           <button
             type="submit"
-            className="rounded-md bg-indigo-600 px-4 py-2 font-semibold text-white hover:bg-indigo-700"
+            disabled={submitting}
+            className="rounded-md bg-indigo-600 px-4 py-2 font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
           >
-            Save Changes
+            {submitting ? 'Saving...' : 'Save Changes'}
           </button>
           <button
             type="button"
+            disabled={submitting}
             onClick={onDone}
-            className="rounded-md border border-slate-300 px-4 py-2 font-semibold text-slate-700 hover:bg-slate-100"
+            className="rounded-md border border-slate-300 px-4 py-2 font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50"
           >
             Cancel
           </button>
@@ -416,11 +651,53 @@ function StudentDetail({
   evaluations,
   parent,
 }: StudentDetailProps) {
+  const { semesters } = useData()
   const studentClass = classes.find((c) => c.id === user.classId)
   const studentScores = scores.filter((s) => s.studentEmail === user.email)
   const studentAttendance = attendance.filter((a) => a.studentEmail === user.email)
   const studentProgress = progress.filter((p) => p.studentEmail === user.email)
   const studentEvaluations = evaluations.filter((e) => e.studentEmail === user.email)
+
+  const [selectedKey, setSelectedKey] = useState<string | null>(null)
+
+  const [selectedSemesterId, setSelectedSemesterId] = useState(() => {
+    const today = new Date().toISOString().slice(0, 10)
+    
+    // 1. Try to find a semester in the student's class year matching current date
+    if (studentClass?.year) {
+      const matchingSem = semesters.find(
+        (s) => s.year === studentClass.year && today >= s.startDate && today <= s.endDate
+      )
+      if (matchingSem) return matchingSem.id
+
+      // 2. Fall back to the first semester of the student's class year
+      const firstSemOfClassYear = semesters.find((s) => s.year === studentClass.year)
+      if (firstSemOfClassYear) return firstSemOfClassYear.id
+    }
+
+    // 3. Fall back to any semester matching the current date
+    const currentSem = semesters.find((s) => today >= s.startDate && today <= s.endDate)
+    if (currentSem) return currentSem.id
+
+    // 4. Default to first semester, or empty
+    return semesters[0]?.id ?? ''
+  })
+
+  const filteredScores = useMemo(() => {
+    if (!selectedSemesterId) return studentScores
+    const sem = semesters.find((s) => s.id === selectedSemesterId)
+    if (!sem) return studentScores
+    return studentScores.filter((s) => s.date >= sem.startDate && s.date <= sem.endDate)
+  }, [studentScores, semesters, selectedSemesterId])
+
+  const groupedScores = useMemo(() => {
+    const map = new Map<string, typeof filteredScores>()
+    for (const s of filteredScores) {
+      if (!map.has(s.subject)) map.set(s.subject, [])
+      map.get(s.subject)!.push(s)
+    }
+    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b))
+  }, [filteredScores])
 
   const attendanceSummary = useMemo(() => {
     const summary: Record<AttendanceStatus, number> = {
@@ -432,6 +709,13 @@ function StudentDetail({
     for (const record of studentAttendance) summary[record.status] += 1
     return summary
   }, [studentAttendance])
+
+  const scoreStyle = (s: number) => {
+    if (s >= 80) return 'bg-emerald-100 text-emerald-700 border-emerald-200'
+    if (s >= 65) return 'bg-indigo-100 text-indigo-700 border-indigo-200'
+    if (s >= 50) return 'bg-amber-100 text-amber-700 border-amber-200'
+    return 'bg-rose-100 text-rose-700 border-rose-200'
+  }
 
   return (
     <>
@@ -457,29 +741,135 @@ function StudentDetail({
         </dl>
       </Card>
 
-      <Card title={`Marks (${studentScores.length})`}>
-        {studentScores.length === 0 ? (
-          <p className="text-sm text-slate-500">No marks recorded.</p>
+      <Card
+        title="Academic Performance"
+        description="Select a semester to filter subject averages and individual test marks."
+      >
+        <div className="flex items-center gap-3 mb-4">
+          <label className="text-sm font-semibold text-slate-600 shrink-0">Semester:</label>
+          <select
+            value={selectedSemesterId}
+            onChange={(e) => {
+              setSelectedSemesterId(e.target.value)
+              setSelectedKey(null)
+            }}
+            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 bg-white"
+          >
+            <option value="">All semesters</option>
+            {semesters.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name} ({s.year})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {filteredScores.length === 0 ? (
+          <p className="text-sm text-slate-500">No marks recorded for this period.</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
+          <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+            <table className="min-w-full text-sm border-collapse">
               <thead>
-                <tr className="border-b border-slate-200 text-left text-slate-500">
-                  <th className="py-2 pr-4">Subject</th>
-                  <th className="py-2 pr-4">Test</th>
-                  <th className="py-2 pr-4">Date</th>
-                  <th className="py-2 pr-2 text-right">Score</th>
+                <tr className="bg-slate-50 text-slate-500 border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wider">
+                  <th className="py-3 px-4">Subject</th>
+                  <th className="py-3 px-4">Detailed Marks</th>
+                  <th className="py-3 px-4 text-center w-24">Average</th>
                 </tr>
               </thead>
-              <tbody>
-                {studentScores.map((s) => (
-                  <tr key={s.id} className="border-b border-slate-100">
-                    <td className="py-2 pr-4 font-semibold">{s.subject}</td>
-                    <td className="py-2 pr-4 text-slate-600">{s.description}</td>
-                    <td className="py-2 pr-4 text-slate-600">{s.date}</td>
-                    <td className="py-2 pr-2 text-right font-semibold">{s.scoreReceived}</td>
-                  </tr>
-                ))}
+              <tbody className="divide-y divide-slate-100">
+                {groupedScores.map(([subject, subjectScores]) => {
+                  const avg = Math.round(
+                    subjectScores.reduce((sum, s) => sum + s.scoreReceived, 0) / subjectScores.length,
+                  )
+                  const activeKeyForSubject = selectedKey?.startsWith(subject + ':') ? selectedKey : null
+                  const selectedScoreItem = activeKeyForSubject
+                    ? subjectScores.find((s) => `${subject}:${s.testId}` === activeKeyForSubject)
+                    : null
+                  const selectedEvalItem = selectedScoreItem
+                    ? evaluations.find(
+                        (e) =>
+                          e.studentEmail === user.email &&
+                          e.subject === subject &&
+                          e.testId === selectedScoreItem.testId
+                      )
+                    : null
+
+                  return (
+                    <Fragment key={subject}>
+                      <tr className="hover:bg-slate-50">
+                        <td className="py-3 px-4 font-semibold text-slate-900">{subject}</td>
+                        <td className="py-3 px-4">
+                          <div className="flex flex-wrap gap-2">
+                            {subjectScores.map((s) => {
+                              const key = `${subject}:${s.testId}`
+                              const isSelected = selectedKey === key
+                              return (
+                                <button
+                                  key={s.id}
+                                  type="button"
+                                  onClick={() => setSelectedKey(isSelected ? null : key)}
+                                  className={`inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-semibold border transition-all hover:scale-105 ${
+                                    isSelected
+                                      ? 'bg-indigo-600 text-white border-indigo-700 ring-2 ring-indigo-300'
+                                      : scoreStyle(s.scoreReceived)
+                                  }`}
+                                  title={`Click to view evaluation for ${s.description}`}
+                                >
+                                  <span className="opacity-80">{s.description}:</span>
+                                  <span>{s.scoreReceived}</span>
+                                </button>
+                              )
+                            })}
+                          </div>
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${scoreStyle(avg)}`}>
+                            {avg}
+                          </span>
+                        </td>
+                      </tr>
+                      {selectedScoreItem && (
+                        <tr key={`${subject}:detail`} className="bg-indigo-50/20">
+                          <td colSpan={3} className="px-4 py-3">
+                            <div className="rounded-lg border border-indigo-100 bg-white p-3 shadow-sm text-xs space-y-2">
+                              <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+                                <div>
+                                  <span className="font-semibold text-slate-800 text-sm">{selectedScoreItem.description}</span>
+                                  <span className="ml-2 font-mono text-slate-500 bg-slate-100 px-1 py-0.5 rounded text-[10px]">{selectedScoreItem.testId}</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-slate-500">{selectedScoreItem.date}</span>
+                                  <span className={`inline-flex rounded-full px-2 py-0.5 font-bold ${scoreStyle(selectedScoreItem.scoreReceived)}`}>
+                                    Score: {selectedScoreItem.scoreReceived}
+                                  </span>
+                                </div>
+                              </div>
+                              
+                              {selectedEvalItem ? (
+                                <div className="grid gap-2 sm:grid-cols-3 pt-1">
+                                  <div>
+                                    <span className="font-semibold text-slate-700 block">Strengths:</span>
+                                    <p className="text-slate-600 mt-0.5">{selectedEvalItem.strengths || 'None specified.'}</p>
+                                  </div>
+                                  <div>
+                                    <span className="font-semibold text-slate-700 block">Weaknesses:</span>
+                                    <p className="text-slate-600 mt-0.5">{selectedEvalItem.weaknesses || 'None specified.'}</p>
+                                  </div>
+                                  <div>
+                                    <span className="font-semibold text-indigo-700 block">Learning Path:</span>
+                                    <p className="text-indigo-700 mt-0.5 font-medium">{selectedEvalItem.suggestedPath || 'Regular course.'}</p>
+                                  </div>
+                                </div>
+                              ) : (
+                                <p className="text-slate-500 italic">No teacher evaluation or learning path generated for this test.</p>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  )
+                })}
               </tbody>
             </table>
           </div>

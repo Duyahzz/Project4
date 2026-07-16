@@ -379,7 +379,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
         const mappedUsers = mapApiUsersToFrontend(apiUsers, apiStudents, apiTeachers).map(u => {
           if (u.role === 'parent' && u.userId) {
             const childEmail = childEmailByParentUserId.get(u.userId.toLowerCase())
-            if (childEmail) return { ...u, childEmail }
+            const parentProfile = apiParents.find(p => p.userId?.toLowerCase() === u.userId?.toLowerCase())
+            const parentId = parentProfile?.parentId ? String(parentProfile.parentId) : undefined
+            return { ...u, childEmail, parentId }
           }
           if (u.role === 'student' && u.userId) {
             const studentPk = studentPkByUserId.get(u.userId.toLowerCase())

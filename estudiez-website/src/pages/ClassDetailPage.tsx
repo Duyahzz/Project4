@@ -144,14 +144,19 @@ export function ClassDetailPage() {
   const [formSystem, setFormSystem] = useState<'regular' | 'revision'>('regular')
   const [formError, setFormError] = useState('')
 
+  const classSemesters = useMemo(() => {
+    return semesters.filter((s) => s.year === schoolClass?.year)
+  }, [semesters, schoolClass])
+
   // Initialize default semester ID
   useEffect(() => {
-    if (semesters.length > 0 && !timetableSemesterId) {
-      setTimetableSemesterId(semesters[0].id)
+    if (classSemesters.length > 0 && !timetableSemesterId) {
+      setTimetableSemesterId(classSemesters[0].id)
     }
-  }, [semesters, timetableSemesterId])
+  }, [classSemesters, timetableSemesterId])
 
-  const activeTimetableSemesterId = timetableSemesterId || semesters[0]?.id || ''
+  const activeTimetableSemesterId = timetableSemesterId || classSemesters[0]?.id || semesters[0]?.id || ''
+  const activeSemesterObj = useMemo(() => semesters.find((s) => s.id === activeTimetableSemesterId), [semesters, activeTimetableSemesterId])
   const classTimetableSlots = useMemo(() => {
     return timetable.filter(
       (s) => s.classId === classId && s.semesterId === activeTimetableSemesterId
@@ -628,22 +633,29 @@ export function ClassDetailPage() {
       >
         <div className="space-y-4">
           <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold text-slate-600">Semester:</span>
-              {semesters.length === 0 ? (
-                <span className="text-sm text-slate-400">No semesters defined</span>
-              ) : (
-                <select
-                  value={activeTimetableSemesterId}
-                  onChange={(e) => setTimetableSemesterId(e.target.value)}
-                  className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 bg-white"
-                >
-                  {semesters.map((sem) => (
-                    <option key={sem.id} value={sem.id}>
-                      {sem.name} ({sem.year})
-                    </option>
-                  ))}
-                </select>
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-slate-600">Semester:</span>
+                {classSemesters.length === 0 ? (
+                  <span className="text-sm text-slate-400">No semesters defined for this school year</span>
+                ) : (
+                  <select
+                    value={activeTimetableSemesterId}
+                    onChange={(e) => setTimetableSemesterId(e.target.value)}
+                    className="rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-700 bg-white"
+                  >
+                    {classSemesters.map((sem) => (
+                      <option key={sem.id} value={sem.id}>
+                        {sem.name} ({sem.year})
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              {activeSemesterObj && (
+                <span className="text-sm text-slate-500 font-medium">
+                  {activeSemesterObj.startDate || '—'} → {activeSemesterObj.endDate || '—'}
+                </span>
               )}
             </div>
           </div>
@@ -1145,7 +1157,11 @@ function SemesterProgress({
   const [errors, setErrors] = useState<Partial<Record<keyof SemesterFormState, string>>>({})
   const [expanded, setExpanded] = useState<string | null>(null)
 
-  const activeId = selectedId || semesters[0]?.id || ''
+  const classSemesters = useMemo(() => {
+    return semesters.filter((s) => s.year === schoolClass?.year)
+  }, [semesters, schoolClass])
+
+  const activeId = selectedId || classSemesters[0]?.id || semesters[0]?.id || ''
   const semester = semesters.find((s) => s.id === activeId)
 
   const update = <K extends keyof SemesterFormState>(key: K, value: SemesterFormState[K]) =>
@@ -1234,8 +1250,8 @@ function SemesterProgress({
             }}
             className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
-            {semesters.length === 0 ? <option value="">No semesters yet</option> : null}
-            {semesters.map((s) => (
+            {classSemesters.length === 0 ? <option value="">No semesters yet</option> : null}
+            {classSemesters.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.name} · {s.year}
               </option>

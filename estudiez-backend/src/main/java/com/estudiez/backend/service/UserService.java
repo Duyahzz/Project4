@@ -9,6 +9,8 @@ import com.estudiez.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.jdbc.core.JdbcTemplate;
+import jakarta.annotation.PostConstruct;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -20,6 +22,32 @@ public class UserService {
     private final UserRepository userRepo;
     private final PasswordEncoder passwordEncoder;
     private final RoleRepository roleRepo;
+    private final JdbcTemplate jdbcTemplate;
+
+    @PostConstruct
+    public void initDatabase() {
+        // Add PlainPassword column if it doesn't exist
+        try {
+            jdbcTemplate.execute("ALTER TABLE Users ADD PlainPassword NVARCHAR(255) NULL");
+        } catch (Exception e) {
+            // Column already exists — safe to ignore
+        }
+        // Backfill PlainPassword for existing seed users where it is NULL
+        try {
+            jdbcTemplate.execute(
+                "UPDATE u SET u.PlainPassword = CASE " +
+                "  WHEN r.Code = 'ADMIN'   THEN 'Admin@123' " +
+                "  WHEN r.Code = 'TEACHER' THEN 'Teacher@123' " +
+                "  WHEN r.Code = 'STUDENT' THEN 'Student@123' " +
+                "  WHEN r.Code = 'PARENT'  THEN 'Parent@123' " +
+                "  ELSE 'User@123' END " +
+                "FROM Users u JOIN Roles r ON u.RoleId = r.RoleId " +
+                "WHERE u.PlainPassword IS NULL"
+            );
+        } catch (Exception e) {
+            // Ignore errors in backfill
+        }
+    }
 
     public List<User> findAll() { return userRepo.findAll(); }
 
@@ -36,6 +64,7 @@ public class UserService {
     public User create(User user) {
         if (userRepo.existsByUsername(user.getUsername()))
             throw new IllegalArgumentException("Username already exists: " + user.getUsername());
+        user.setPlainPassword(user.getPasswordHash());
         user.setPasswordHash(passwordEncoder.encode(user.getPasswordHash()));
         return userRepo.save(user);
     }
@@ -47,6 +76,10 @@ public class UserService {
         user.setPhone(updated.getPhone());
         user.setAvatarUrl(updated.getAvatarUrl());
         user.setIsActive(updated.getIsActive());
+        if (updated.getPlainPassword() != null && !updated.getPlainPassword().isEmpty() && !updated.getPlainPassword().equals(user.getPlainPassword())) {
+            user.setPlainPassword(updated.getPlainPassword());
+            user.setPasswordHash(passwordEncoder.encode(updated.getPlainPassword()));
+        }
         return userRepo.save(user);
     }
 
@@ -98,6 +131,7 @@ public class UserService {
         User user = findById(userId);
         if (!passwordEncoder.matches(currentPassword, user.getPasswordHash()))
             throw new IllegalArgumentException("Current password is incorrect");
+        user.setPlainPassword(newPassword);
         user.setPasswordHash(passwordEncoder.encode(newPassword));
         userRepo.save(user);
     }

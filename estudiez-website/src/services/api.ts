@@ -123,6 +123,8 @@ export const getTeachers = () => apiGet<ApiTeacher[]>('/api/teachers')
 export const createApiUser = (u: ApiUser) => apiPost<ApiUser>('/api/users', u)
 export const updateApiUser = (id: string, u: ApiUser) => apiPut<ApiUser>(`/api/users/${id}`, u)
 export const deleteApiUser = (id: string) => apiDel(`/api/users/${id}`)
+export const createApiStudent = (s: any) => apiPost<any>('/api/students', s)
+export const updateApiStudent = (id: string, s: any) => apiPut<any>(`/api/students/${id}`, s)
 
 // ─── Parents & Student-Parent Links ──────────────────────────────────────────
 export interface ApiParent {
@@ -138,6 +140,8 @@ export interface ApiParentLink {
 }
 export const getParents     = () => apiGet<ApiParent[]>('/api/parents')
 export const getParentLinks = () => apiGet<ApiParentLink[]>('/api/parents/links')
+export const linkParentToStudent = (parentId: string, childEmail: string) =>
+  apiPost<any>(`/api/parents/${parentId}/students`, { childEmail })
 
 // ─── Class Enrollments ───────────────────────────────────────────────────────
 export interface ApiClassEnrollment {
@@ -273,7 +277,7 @@ export function mapApiUsersToFrontend(
       fullName: u.fullName ?? '',
       address: student?.address ?? '',
       phone: u.phone ?? undefined,
-      password: '',  // authentication is server-side; no plain-text password stored
+      password: (u as any).plainPassword ?? '',
       role,
       userId: u.userId ?? undefined,
       status: student?.status || undefined,
