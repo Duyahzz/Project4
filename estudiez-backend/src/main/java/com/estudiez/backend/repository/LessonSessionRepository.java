@@ -11,4 +11,5 @@ public interface LessonSessionRepository extends JpaRepository<LessonSession, In
     List<LessonSession> findByClassId(Integer classId);
     List<LessonSession> findByTeacherId(UUID teacherId);
     List<LessonSession> findByClassIdAndStatus(Integer classId, String status);
+    List<LessonSession> findByTimetableSlotId(Integer timetableSlotId);
 }
